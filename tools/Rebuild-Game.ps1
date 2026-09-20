@@ -1,5 +1,5 @@
 # Reuse one generated source directory and build tree; retail is the port target.
-param([ValidateSet('Retail','February')][string]$Build = 'Retail')
+param([ValidateSet('Retail','February')][string]$Build = 'Retail', [ValidateSet('Debug','RelWithDebInfo')][string]$Configuration = 'Debug')
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent
 Push-Location $workspace
@@ -23,6 +23,8 @@ try {
     Set-Content -LiteralPath config-ghidra.toml -Value $config -Encoding utf8
     $outputRoot = (Resolve-Path -LiteralPath output-ghidra).Path
     if ($outputRoot -ne (Join-Path $workspace 'output-ghidra')) { throw 'Unexpected output path' }
+    $recompiler = Join-Path $workspace "PS2Recomp/out/build/ps2xRecomp/$Configuration/ps2_recomp.exe"
+    if (-not (Test-Path -LiteralPath $recompiler -PathType Leaf)) { throw "Build ps2_recomp for $Configuration before regenerating." }
     $oldFiles = @(Get-ChildItem -LiteralPath $outputRoot -File)
     $oldRuntimeFiles = @{}
     foreach ($item in $oldFiles) {
@@ -37,7 +39,7 @@ try {
     foreach ($item in $oldFiles) {
         Remove-Item -LiteralPath $item.FullName -Force
     }
-    & .\PS2Recomp\out\build\ps2xRecomp\Debug\ps2_recomp.exe .\config-ghidra.toml *> .\PS2Recomp\out\build\ntsc-recompile.log
+    & $recompiler .\config-ghidra.toml *> .\PS2Recomp\out\build\ntsc-recompile.log
     if ($LASTEXITCODE -ne 0) { throw 'Recompilation failed; see ntsc-recompile.log' }
     # Preserve unchanged timestamps so correcting one function does not rebuild
     # every generated translation unit. No alternate output tree or backup.
@@ -64,7 +66,7 @@ try {
     $cmakeDriver = 'import os,subprocess,sys; e={k.upper():v for k,v in os.environ.items()}; e["MSBUILDDISABLENODEREUSE"]="1"; e["CL"]=e.get("CL","")+" /MP4"; f=open(sys.argv[1],"w"); r=subprocess.run(sys.argv[2:],env=e,stdout=f,stderr=subprocess.STDOUT); f.close(); sys.exit(r.returncode)'
     py -3 -B -c $cmakeDriver .\PS2Recomp\out\build\ntsc-configure.log cmake -S .\PS2Recomp -B .\PS2Recomp\out\build -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DPS2X_ENABLE_RUNTIME_LOGS=ON
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed; see ntsc-configure.log' }
-    py -3 -B -c $cmakeDriver .\PS2Recomp\out\build\ntsc-build.log cmake --build .\PS2Recomp\out\build --config Debug --target ps2EntryRunner -- /nodeReuse:false
+    py -3 -B -c $cmakeDriver .\PS2Recomp\out\build\ntsc-build.log cmake --build .\PS2Recomp\out\build --config $Configuration --target ps2EntryRunner -- /nodeReuse:false
     if ($LASTEXITCODE -ne 0) { throw 'Build failed; see ntsc-build.log' }
-    Write-Output "$Build regeneration and build completed successfully."
+    Write-Output "$Build $Configuration regeneration and build completed successfully."
 } finally { Pop-Location }

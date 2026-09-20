@@ -8,6 +8,32 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 
 public class ImportRumbleRetail extends GhidraScript {
+    private void registerRetailCameraCallback() throws Exception {
+        long start = 0x15a5f0;
+        int size = 960;
+        byte[] code = new byte[size];
+        currentProgram.getMemory().getBytes(toAddr(start), code);
+        String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(code));
+        if (!hash.equals("6b2cfbe8674e2d4f913cecd83aa8ed7f48ba2d3e1c6f6c057f600e3082b077a3"))
+            throw new IllegalStateException("Retail camera callback bytes differ");
+        Function function = getFunctionAt(toAddr(start));
+        if (function == null) {
+            AddressSet body = new AddressSet(toAddr(start), toAddr(start + size - 1));
+            if (currentProgram.getFunctionManager().getFunctionsOverlapping(body).hasNext())
+                throw new IllegalStateException("Retail camera callback overlaps another body");
+            disassemble(toAddr(start));
+            function = currentProgram.getFunctionManager().createFunction(
+                "FUN_0015a5f0", toAddr(start), body, SourceType.USER_DEFINED);
+        }
+        if (function == null || function.getBody().getNumAddresses() != size)
+            throw new IllegalStateException("Retail camera callback boundary differs");
+        function.setComment("Retail entry observed at indirect call 0x15DF64. Complete 960-byte " +
+            "stack frame, internal conditional branches, restoring epilogue/return; next entry 0x15A9B0. " +
+            "February CameraAI_SimulateMountedWatchCamera at 0x15BF10 is a candidate only: " +
+            "117/240 identical words, so its name is not transferred. Export the actual retail body.");
+        println("Registered missing retail callback at " + toAddr(start));
+    }
+
     private void repairPlayerNameLoop() throws Exception {
         long start = 0x1cb860;
         int size = 340;
@@ -92,6 +118,7 @@ public class ImportRumbleRetail extends GhidraScript {
             throw new IllegalStateException("Verified USA retail ELF required");
         repairViewportLoop();
         repairPlayerNameLoop();
+        registerRetailCameraCallback();
         apply(0x13f280, 556, "c7a5f72b8ed1db87a99793d7640ab4717dd2a28cc23b07d6380f76e7d314eaca",
             "RoadCaptainExtraAssembly_Update", "0x1428A0; all 139 words identical over the complete 556-byte function, including VU math, object field offsets, return and delay slot. Live indirect call at 0x13E388 confirms the omitted retail callback entry");
         apply(0x1cb780, 224, "aa2906fe7c734514215c738bb1f2a0be431ef8a6320d53b7a9ead5f18afce995",

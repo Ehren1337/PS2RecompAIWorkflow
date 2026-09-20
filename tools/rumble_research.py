@@ -8,6 +8,8 @@ Examples: py -3 -B tools/rumble_research.py function 0x1af9e0
           py -3 -B tools/rumble_research.py picture --build Retail
           py -3 -B tools/rumble_research.py banks --build Retail --verify-decode
           py -3 -B tools/rumble_research.py music --verify-decode
+          py -3 -B tools/rumble_research.py environment --id 5 --preset 0
+          py -3 -B tools/rumble_research.py model --build February --id 10061
 No native bindings, third-party packages, or player dependencies.
 """
 import argparse
@@ -56,6 +58,129 @@ def verify(module):
     if digest != expected:
         raise ValueError(f"{module} build differs from its verified analysis; refusing to apply its symbols")
     return digest
+
+
+def environment_query(args):
+    """Read original retail effect parameters; never substitute audio processing."""
+    digest = verify("retail-iop")
+    data = IDENTITIES["retail-iop"][0].read_bytes()
+    if data[:6] != b"\x7fELF\x01\x01":
+        raise ValueError("Expected little-endian ELF32 AUDIO.IRX")
+    phoff = struct.unpack_from("<I", data, 28)[0]
+    phsize, phcount = struct.unpack_from("<HH", data, 42)
+    if phsize < 32 or phoff + phsize * phcount > len(data):
+        raise ValueError("Invalid ELF program table")
+
+    def read(address, count):
+        for index in range(phcount):
+            kind, offset, virtual, _, size, _, _, _ = struct.unpack_from(
+                "<8I", data, phoff + index * phsize)
+            if kind == 1 and virtual <= address and address + count <= virtual + size:
+                start = offset + address - virtual
+                if start + count > len(data):
+                    raise ValueError("Effect table exceeds file segment")
+                return data[start:start + count]
+        raise ValueError("Effect address is not file-backed")
+
+    address = 0xf410 + (args.id * 4 + args.preset) * 16
+    mode, depth, delay, feedback = struct.unpack("<4i", read(address, 16))
+    ramp_step = struct.unpack("<I", read(0xf810, 4))[0]
+    modes = ("off", "room", "studio1", "studio2", "studio3", "hall", "space", "echo", "delay", "pipe")
+    if not 0 <= mode < len(modes) or not 0 <= depth <= 0x10000 or not ramp_step:
+        raise ValueError("Unexpected original effect parameters")
+    # 890 supplies equal Q16 targets; 94C approaches by f810 per update;
+    # A6C converts the current depths to signed SPU effect-volume registers.
+    q16 = [min(depth, ramp_step * n) for n in range(1, 5)]
+    startup = []
+    current_mode, current_depth, enabled = 0, 0, True
+    for update in range(1, 21):
+        target = depth if enabled else 0
+        current_depth += max(-ramp_step, min(ramp_step, target - current_depth))
+        if current_mode != mode or not enabled:
+            if current_depth == 0:
+                current_mode, enabled = mode, True
+            else:
+                enabled = False
+        startup.append({"update": update, "mode": current_mode, "depth_q16": current_depth,
+                        "depth_register": (current_depth * 0x3fff) >> 16,
+                        "target_enabled": enabled})
+    return {"module_sha256": digest, "environment": args.id, "preset": args.preset,
+            "table_address": hex(address), "mode": modes[mode], "mode_id": mode,
+            "target_depth_q16": depth, "steady_depth_register_lr": (depth * 0x3fff) >> 16,
+            "delay": delay, "feedback": feedback, "ramp_step_q16": ramp_step,
+            "startup_controller_updates": startup,
+            "nominal_ramp_from_zero_q16": q16,
+            "nominal_ramp_depth_registers": [(value * 0x3fff) >> 16 for value in q16],
+            "notes": ["Delay and feedback are effect-mode parameters, not wet-output gains.",
+                      "Depth is an enabled steady-state target; disable ramps toward zero.",
+                      "Ramp samples assume the requested mode is already selected; mode changes fade down first.",
+                      "This query does not render audio or implement reverb, routing, or effect memory."]}
+
+
+def reverb_network_reference(args):
+    """Synthetic half-rate network experiment, independent of game assets."""
+    registers = [2, 3, 0x6000, 0x5000, 0x3000, 0xe000, 0x1000, 0x2000,
+                 0x4000, 0x3000, 40, 90, 39, 89, 38, 88, 35, 85, 50, 100,
+                 49, 99, 48, 98, 45, 95, 70, 120, 80, 130, 0x6000, 0x7000]
+    coefficients = [v if v < 32768 else v - 65536 for v in registers]
+    memory = [0] * 1024
+    clip = lambda x: min(32767, max(-32768, x))
+    multiply = lambda x, field: x * coefficients[field] // 32768
+    def step(frame, side, sample, write_enabled):
+        def read_units(units, previous=0):
+            return memory[(frame + units * 4 + previous) % len(memory)]
+        incoming = multiply(sample, 30 + side)
+        pending = []
+        for source, destination in ((16 + side, 10 + side), (24 + (side ^ 1), 18 + side)):
+            prior = read_units(registers[destination], -1)
+            value = prior + multiply(incoming + multiply(read_units(registers[source]), 7) - prior, 2)
+            pending.append((registers[destination], clip(value)))
+        value = sum(multiply(read_units(registers[tap + side]), field)
+                    for tap, field in ((12, 3), (14, 4), (20, 5), (22, 6)))
+        for size, volume, destination in ((0, 8, 26 + side), (1, 9, 28 + side)):
+            delayed = read_units(registers[destination] - registers[size])
+            stored = value - multiply(delayed, volume)
+            value = delayed + multiply(stored, volume)
+            pending.append((registers[destination], clip(stored)))
+        if write_enabled:
+            for destination, value_to_store in pending:
+                memory[(frame + destination * 4) % len(memory)] = value_to_store
+        return clip(value)
+
+    impulses = {0: (20000, -17000), 17: (32767, 32767), 23: (-40000, 50000)}
+    full_rate = getattr(args, 'full_rate', False)
+    if full_rate:
+        # Offline convolution with unbounded history, independently of the C++
+        # streaming ring. Left and right network updates occur on alternate ticks.
+        taps = [-1,0,2,0,-10,0,35,0,-103,0,266,0,-616,0,1332,0,-2960,0,10246,
+                16384,10246,0,-2960,0,1332,0,-616,0,266,0,-103,0,35,0,-10,0,2,0,-1]
+        inputs = [tuple(map(clip, impulses.get(tick, (0, 0)))) for tick in range(4096)]
+        def convolution(history, tick, channel, coefficients, delay):
+            return clip(sum(coefficient * history[tick - age - delay][channel]
+                            for age, coefficient in enumerate(coefficients)
+                            if tick >= age + delay) // 32768)
+        sparse = []
+        for tick in range(len(inputs)):
+            side = tick % 2
+            down = convolution(inputs, tick, side, taps, 1)
+            value = step(tick // 2, side, down, not 600 <= tick < 800)
+            sparse.append((value, 0) if side == 0 else (0, value))
+        up_taps = [clip(tap * 2) for tap in taps]
+        output = [convolution(sparse, tick, side, up_taps, 0)
+                  for tick in range(len(inputs)) for side in (0, 1)]
+    else:
+        output = [step(frame, side, clip(impulses.get(frame, (0, 0))[side]), not 300 <= frame < 400)
+                  for frame in range(2048) for side in (0, 1)]
+    raw = struct.pack('<' + 'h' * len(output), *output)
+    fnv = 14695981039346656037
+    for value in raw:
+        fnv = ((fnv ^ value) * 1099511628211) & ((1 << 64) - 1)
+    return {"frames": len(output) // 2, "pcm_fnv1a64": fnv,
+            "pcm_sha256": hashlib.sha256(raw).hexdigest(),
+            "first_nonzero_frame": next(i // 2 for i, value in enumerate(output) if value),
+            "peak": max(abs(value) for value in output),
+            "scope": ("Synthetic 48-kHz resampled network" if full_rate else "Synthetic 24-kHz network") +
+                     "; no depth gain, game audio, or device output."}
 
 
 def exported_functions(module):
@@ -137,8 +262,10 @@ def process_state(pid):
         buffer, size = ctypes.create_unicode_buffer(32768), ctypes.c_uint32(32768)
         if not api.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
             return "unknown"
-        expected = ROOT / "PS2Recomp/out/build/ps2xRuntime/Debug/ps2EntryRunner.exe"
-        return "runner alive" if Path(buffer.value).resolve() == expected.resolve() else "PID belongs to another executable"
+        runtime = ROOT / "PS2Recomp/out/build/ps2xRuntime"
+        expected = {(runtime / config / "ps2EntryRunner.exe").resolve()
+                    for config in ("Debug", "RelWithDebInfo")}
+        return "runner alive" if Path(buffer.value).resolve() in expected else "PID belongs to another executable"
     finally:
         api.CloseHandle(handle)
 
@@ -213,16 +340,31 @@ def navigation_state():
             "disc_root": sample["disc"]["root"], "metrics": metrics}
 
 
-def press_key(key, hold_ms=1000):
-    """Send one paired keypress to the verified runner; create no files."""
+def press_key(key, hold_ms=1000, *, until=None):
+    """Paired input, released on the optional verified condition or time limit."""
+    return press_keys((key,), hold_ms, until=until)
+
+
+def press_keys(keys, hold_ms=1000, *, until=None):
+    """Hold a controller chord; release every posted key, including on failure.
+
+    Development-only normal input (for example, ("cross", "left")), with the
+    same bounded condition wait as press_key. Does not write guest state.
+    """
     if os.name != "nt":
         raise ValueError("Window input helper currently supports the Windows development host only")
-    if key not in NAV_KEYS or not 50 <= hold_ms <= 2500:
-        raise ValueError("Unknown key or hold outside 50..2500 ms")
+    # Slow debug gameplay can take longer than a short menu press to poll input.
+    # Keep holds bounded and always release them through the finally block.
+    keys = tuple(keys)
+    if (not 1 <= len(keys) <= 4 or len(set(keys)) != len(keys) or
+            any(key not in NAV_KEYS for key in keys) or not 50 <= hold_ms <= 30000):
+        raise ValueError("Expected 1..4 distinct known keys and a hold within 50..30000 ms")
     before = navigation_state()
     pid = before["process_id"]
     if process_state(pid) != "runner alive" or before["runtime_state"] != "running" or before["age_seconds"] > 5:
         raise ValueError("Input requires the live expected runner and a fresh inspector sample")
+    if before["metrics"].get("unsupported_commands", 0):
+        raise ValueError("Input stopped because the runtime has unsupported work")
     module = {FEB.resolve(): "ee", RETAIL.resolve(): "retail"}.get(Path(before["disc_root"]).resolve())
     if module is None:
         raise ValueError("Unexpected runtime disc root")
@@ -247,20 +389,34 @@ def press_key(key, hold_ms=1000):
     if not user.EnumWindows(collect, 0) or len(windows) != 1:
         raise ValueError("Expected exactly one PS2-Recomp window owned by the runner")
     window = windows[0]
-    virtual_key, scan, extended = NAV_KEYS[key]
-    down = 1 | (scan << 16) | (int(extended) << 24)
-    if not user.PostMessageW(window, 0x100, virtual_key, down):
-        raise ctypes.WinError(ctypes.get_last_error())
+    pressed = []
     try:
-        time.sleep(hold_ms / 1000)
+        for key in keys:
+            virtual_key, scan, extended = NAV_KEYS[key]
+            down = 1 | (scan << 16) | (int(extended) << 24)
+            if not user.PostMessageW(window, 0x100, virtual_key, down):
+                raise ctypes.WinError(ctypes.get_last_error())
+            pressed.append((virtual_key, down))
+        deadline = time.monotonic() + hold_ms / 1000
+        while True:
+            if until is not None and until():
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.05, remaining) if until is not None else remaining)
     finally:
         # The release is guaranteed even if the wait is interrupted. Never send
         # it to a different process if the original window disappeared.
         owner = ctypes.c_uint32()
         user.GetWindowThreadProcessId(window, ctypes.byref(owner))
         if owner.value == pid:
-            if not user.PostMessageW(window, 0x101, virtual_key, down | 0xc0000000):
-                raise ctypes.WinError(ctypes.get_last_error())
+            release_error = None
+            for virtual_key, down in reversed(pressed):
+                if not user.PostMessageW(window, 0x101, virtual_key, down | 0xc0000000):
+                    release_error = ctypes.WinError(ctypes.get_last_error())
+            if release_error is not None:
+                raise release_error
     return before
 
 
@@ -833,6 +989,131 @@ def picture_query(args):
             "scope": "Offline FFmpeg RGBA reference only; no IPU DMA, PS2 color/alpha equivalence, or live upload verified."}
 
 
+def model_layout(data):
+    """Inspect raw O3D trees/material references without relocating guest data.
+
+    Derived from retail 169E00/12C860/12C970. Texture group numbers are raw
+    relative references, not resolved runtime groups or proof of compatibility.
+    Geometry packets are hashed, not interpreted as vertices by this query.
+    """
+    def unpack(fmt, source, offset):
+        if offset < 0 or offset + struct.calcsize(fmt) > len(source):
+            raise ValueError("Truncated model structure")
+        return struct.unpack_from(fmt, source, offset)
+
+    objects, parts, fragments = [], [], []
+    position, part = 0, None
+    while position < len(data):
+        tag, size = unpack("<4sI", data, position)
+        if size < 16 or position + size > len(data):
+            raise ValueError("Invalid model chunk extent")
+        chunk = data[position:position + size]
+        if tag == b"traP":
+            part = unpack("<i", chunk, 8)[0]
+        elif tag == b" dmG":
+            main = unpack("<4i", chunk, 16)
+            alternate = unpack("<4i", chunk, 32)
+            if any(not 0 <= n < 32 for n in main) or any(not -1 <= n < 32 for n in alternate):
+                raise ValueError("Invalid model object slot reference")
+            parts.append({"part": part, "main_slots": main, "alternate_slots": alternate})
+        elif tag == b" fbO":
+            slot = unpack("<I", chunk, 8)[0]
+            if slot >= 32 or any(o["slot"] == slot for o in objects):
+                raise ValueError("Invalid or duplicate model object slot")
+            raw = chunk[16:]
+            if unpack("<4sI4sI", raw, 0) != (b"OBF ", 0x103, b"HEAD", 8):
+                raise ValueError("Unrecognized raw object header")
+            expected = unpack("<h", raw, 16)[0]
+            if not 1 <= expected <= 4096:
+                raise ValueError("Invalid object node count")
+            cursor, nodes, references, node_layout = 24, 0, set(), []
+
+            def node(depth):
+                nonlocal cursor, nodes
+                if depth > 128 or nodes >= expected:
+                    raise ValueError("Object tree exceeds its declared bounds")
+                nodes += 1
+                if unpack("<4sI", raw, cursor) != (b"ELHE", 96):
+                    raise ValueError("Unrecognized tree node header")
+                cursor += 8
+                children, materials, words = unpack("<hhI", raw, cursor)
+                unpack("<96s", raw, cursor)
+                if children < 0 or materials < 0:
+                    raise ValueError("Negative object tree count")
+                cursor += 96
+                list_tag, list_bytes = unpack("<4sI", raw, cursor)
+                if list_tag != b"ELTL" or list_bytes < materials * 4 or list_bytes % 4:
+                    raise ValueError("Object material-list size mismatch")
+                cursor += 8
+                indices = unpack(f"<{materials}I", raw, cursor)
+                # The stored list includes alignment padding. The original
+                # parser advances its declared size, not just active entries.
+                cursor += list_bytes
+                if unpack("<4sI", raw, cursor) != (b"ELDA", words * 4):
+                    raise ValueError("Object geometry-packet size mismatch")
+                cursor += 8
+                if words * 4 > len(raw) - cursor:
+                    raise ValueError("Truncated geometry packet")
+                packet = raw[cursor:cursor + words * 4]
+                for index in indices:
+                    if index * 4 + 64 > len(packet):
+                        raise ValueError("Material reference outside geometry packet")
+                    texture = unpack("<I", packet, index * 4)[0]
+                    group = unpack("<i", packet, index * 4 + 16)[0]
+                    if group != -1:
+                        references.add((group, texture))
+                node_layout.append((depth, children, materials, words))
+                cursor += words * 4
+                for _ in range(children):
+                    node(depth + 1)
+
+            node(0)
+            if nodes != expected or cursor != len(raw):
+                raise ValueError("Object tree count or final extent mismatch")
+            objects.append({"slot": slot, "nodes": nodes, "bytes": len(raw),
+                            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                            "node_layout": node_layout,
+                            "texture_references": sorted(references)})
+        elif tag == b"FpxE":
+            count = unpack("<I", chunk, 8)[0]
+            if 16 + count * 0x7f0 != len(chunk):
+                raise ValueError("Fragment array size mismatch")
+            for index in range(count):
+                at = 16 + index * 0x7f0
+                fragments.append((unpack("<i", chunk, at + 32)[0],
+                                  unpack("<I", chunk, at + 16)[0]))
+        else:
+            raise ValueError(f"Unrecognized model chunk {tag!r}")
+        position += size
+    slots = {obj["slot"] for obj in objects}
+    missing = sorted({n for p in parts for n in (*p["main_slots"], *p["alternate_slots"])
+                      if n >= 0 and n not in slots})
+    refs = sorted(set(fragments).union(*(set(o["texture_references"]) for o in objects)))
+    return {"parts": parts, "objects": objects, "fragment_count": len(fragments),
+            "texture_references": refs, "unpopulated_object_slots": missing}
+
+
+def model_query(args):
+    build_root = FEB if args.build == "February" else RETAIL
+    verify("ee" if args.build == "February" else "retail")
+    inventory = json.loads((ROOT / "analysis/assets-investigation.json").read_text(encoding="utf-8-sig"))
+    build = next(b for b in inventory["Builds"] if b["Build"] == args.build)
+    archive = next(a for a in build["Archives"] if a["Path"] == "GLBLDATA.PS2")
+    rows = [r for r in archive["Resources"] if r["Type"] == "o3d " and r["Id"] == args.id]
+    if len(rows) != 1 or rows[0]["Error"]:
+        raise ValueError("Missing or ambiguous inventoried model")
+    found = [d for t, identity, _, d in stream_resources(build_root / "GLBLDATA.PS2", {"o3d "})
+             if identity == args.id]
+    if len(found) != 1:
+        raise ValueError("Missing or ambiguous model payload")
+    digest = hashlib.sha256(found[0]).hexdigest()
+    if digest.lower() != rows[0]["SHA256"].lower():
+        raise ValueError("Model differs from independently verified inventory")
+    return {"build": args.build, "resource_id": args.id, "sha256": digest,
+            **model_layout(found[0]),
+            "scope": "Read-only tree/material audit; no resolved textures, rendered geometry, physics transfer or installed vehicle"}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -864,10 +1145,18 @@ def main():
     banks.add_argument("--verify-decode", action="store_true", help="Compare every unique sample's first pass with FFmpeg")
     music = sub.add_parser("music", help="Verify retail frontend music in memory; write no files")
     music.add_argument("--verify-decode", action="store_true", help="Compare both complete channels with FFmpeg")
+    model = sub.add_parser("model", help="Inspect verified raw global model trees and texture references; write no files")
+    model.add_argument("--build", choices=("February", "Retail"), default="Retail")
+    model.add_argument("--id", type=int, required=True)
+    environment = sub.add_parser("environment", help="Read verified retail effect mode/depth/delay/feedback; write no files")
+    environment.add_argument("--id", type=int, choices=range(16), required=True)
+    environment.add_argument("--preset", type=int, choices=range(4), default=0)
+    sub.add_parser("reverb-reference", help="Run synthetic reverb experiments in memory").add_argument("--full-rate", action="store_true", help="Include 48-kHz FIR resampling and alternating channel clocks")
     args = parser.parse_args()
     try:
         queries = {"function": function_query, "runtime": runtime_query, "movie": movie_query,
-                   "picture": picture_query, "banks": banks_query, "music": music_query, "sound": sound_query, "nav": navigation_query}
+                   "picture": picture_query, "banks": banks_query, "music": music_query, "sound": sound_query, "model": model_query,
+                   "environment": environment_query, "reverb-reference": reverb_network_reference, "nav": navigation_query}
         print(json.dumps(queries[args.command](args), indent=2))
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"Research query failed: {error}\n")

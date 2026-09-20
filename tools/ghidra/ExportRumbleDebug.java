@@ -10,6 +10,34 @@ public class ExportRumbleDebug extends GhidraScript {
         String[] args = getScriptArgs();
         boolean query = args.length == 2 && args[0].equals("-");
         if (args.length != 1 && !query) throw new IllegalArgumentException("Expected output C file, or - functionName for a read-only console query");
+        if (query && args[1].matches("asm:0x[0-9a-fA-F]+:[0-9]+")) {
+            String[] fields = args[1].split(":");
+            int count = Integer.parseInt(fields[2]);
+            if (count < 1 || count > 128) throw new IllegalArgumentException("Instruction count must be 1..128");
+            var address = toAddr(Long.parseUnsignedLong(fields[1].substring(2), 16));
+            println(currentProgram.getName() + " SHA256=" + currentProgram.getExecutableSHA256());
+            for (int i = 0; i < count; ++i) {
+                var instruction = getInstructionAt(address);
+                if (instruction == null) throw new IllegalArgumentException("No instruction at " + address);
+                println(address + " " + instruction);
+                address = address.add(instruction.getLength());
+            }
+            println("Instruction query complete");
+            return;
+        }
+        if (query && args[1].startsWith("refs:0x")) {
+            var address = toAddr(Long.parseUnsignedLong(args[1].substring(7), 16));
+            int count = 0;
+            for (var reference : getReferencesTo(address)) {
+                if (++count > 128) { println("Reference output capped at 128"); break; }
+                var owner = getFunctionContaining(reference.getFromAddress());
+                println("Reference to " + address + " from " + reference.getFromAddress() +
+                    " type=" + reference.getReferenceType() + " function=" +
+                    (owner == null ? "<data/unassigned>" : owner.getName()));
+            }
+            println("Reference query complete: " + address);
+            return;
+        }
         DecompInterface decompiler = new DecompInterface();
         if (!decompiler.openProgram(currentProgram)) throw new IllegalStateException("Cannot open decompiler");
         if (query) {

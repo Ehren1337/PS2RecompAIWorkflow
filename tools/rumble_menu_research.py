@@ -2,6 +2,7 @@
 
 py -3 -B tools/rumble_menu_research.py label Continue
 py -3 -B tools/rumble_menu_research.py function FE_HandleET_CarSelect --build February
+py -3 -B tools/rumble_menu_research.py catalog
 
 Menu captions are not function names. String references identify data and code
 to investigate, not a callable action. No handler/argument mapping is assumed.
@@ -32,6 +33,7 @@ class Segment:
 
 class MenuResearch:
     def __init__(self, build):
+        self.build = build
         folder, map_path, expected = BUILDS[build]
         data = (ROOT / "Extracted_Assets" / folder / "SLUS_201.74").read_bytes()
         self.digest = hashlib.sha256(data).hexdigest()
@@ -60,6 +62,66 @@ class MenuResearch:
         # Exported ranges can overlap and may omit Ghidra body blocks. Report all
         # range matches, without presenting the map as a verified control-flow graph.
         return [f["name"] for f in self.functions if f["start"] <= address < f["end"]]
+
+    def read(self, address, size):
+        if size < 0:
+            raise ValueError("Negative ELF read size")
+        for segment in self.segments:
+            offset = address - segment.address
+            if 0 <= offset and offset + size <= len(segment.data):
+                return segment.data[offset:offset + size]
+        raise ValueError("Read outside verified ELF load segments")
+
+    def catalog(self):
+        """Retail selection identities from owned ELF/assets, never game calls.
+
+        1948B0 uses the normal track order and text IDs;191A80 displays names
+        from the driver table. These are menu identities, not model indices or
+        route-node IDs. Unlock state and loading readiness are separate.
+        """
+        if self.build != "Retail":
+            raise ValueError("Selection catalog is verified for USA retail only")
+        from rumble_research import stream_resources
+        path = ROOT / "Extracted_Assets" / BUILDS[self.build][0] / "DATA/FEND/FE2.TRK"
+        resources = [data for tag, identity, offset, data in stream_resources(path, {"TxtR"})
+                     if identity == 0]
+        if len(resources) != 1 or hashlib.sha256(resources[0]).hexdigest() != (
+                "d55292d49b3f1a7ea25ca03bf6d3d40ce7233a9c8109801e7801662aeabac95d"):
+            raise ValueError("Frontend text resource differs from verified retail data")
+        strings = {}
+        for record in resources[0].split(b"\0"):
+            if not record:
+                continue
+            key, separator, text = record.partition(b" ")
+            if not separator or not key.isdigit() or int(key) in strings:
+                raise ValueError("Invalid/duplicate retail text identity")
+            strings[int(key)] = text.decode("ascii")
+        order = struct.unpack("<15I", self.read(0x1ecaf0, 60))
+        if sorted(order) != list(range(15)):
+            raise ValueError("Unexpected normal track order")
+        tracks = []
+        for position, identity in enumerate(order):
+            group, variant = divmod(identity, 2)
+            tracks.append({"menu_position": position, "track_id": identity,
+                           "group": group, "variant": variant,
+                           "name": strings[5001 + group * 10 + variant]})
+        vehicles = []
+        for identity in range(36):
+            row = self.read(0x1eac80 + identity * 28, 28)
+            address = struct.unpack_from("<I", row)[0]
+            name = bytearray()
+            for offset in range(64):
+                value = self.read(address + offset, 1)[0]
+                if not value:
+                    break
+                name.append(value)
+            else:
+                raise ValueError("Unterminated driver name")
+            vehicles.append({"driver_id": identity, "name": name.decode("ascii"),
+                             "model_index": row[6]})
+        return {"tracks": tracks, "vehicles": vehicles,
+                "availability": "Catalog membership does not imply unlocked or tested content.",
+                "invocation": "Read-only identities; no selection, unlock changes or direct race launch."}
 
     def words(self):
         for segment in self.segments:
@@ -126,15 +188,17 @@ class MenuResearch:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("label", "function"))
-    parser.add_argument("query")
+    parser.add_argument("mode", choices=("label", "function", "catalog"))
+    parser.add_argument("query", nargs="?")
     parser.add_argument("--build", choices=BUILDS, default="Retail")
     parser.add_argument("--limit", type=int, default=8)
     args = parser.parse_args()
     if not 1 <= args.limit <= 30:
         parser.error("--limit must be in 1..30")
+    if (args.mode == "catalog") != (args.query is None):
+        parser.error("catalog takes no query; label and function require a query")
     research = MenuResearch(args.build)
-    result = getattr(research, args.mode)(args.query, args.limit)
+    result = research.catalog() if args.mode == "catalog" else getattr(research, args.mode)(args.query, args.limit)
     print(json.dumps({"build": args.build, "elf_sha256": research.digest,
                       "read_only": True, **result}, indent=2))
 

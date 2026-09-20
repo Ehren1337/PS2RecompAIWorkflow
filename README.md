@@ -6,9 +6,9 @@ Source patches and development tools from an ongoing Rumble Racing reversing pro
 
 ## What you get
 
-- **Runtime additions:** JSON inspector, bounded history, frame contact sheets, hidden-window capture, and fixes to graphics, scheduling, audio, and IOP/RPC handling.
+- **Runtime additions:** JSON inspector, bounded history, frame contact sheets, hidden-window capture, keyboard mapping, presentation controls, and fixes to graphics, scheduling, audio, and IOP/RPC handling.
 - **Development tools:** local browser viewer, Python research helpers, PowerShell rebuild/inspection scripts, and Ghidra analysis/export scripts.
-- **Rumble-specific work:** build-guarded symbol/function repairs, menu automation, asset-format readers, and handwritten picture/audio compatibility code. These are not settings for other games.
+- **Rumble-specific work:** build-guarded symbol/function repairs, state-checked menu automation, optional developer driving/upgrades, native Video Options, asset-format readers, and handwritten picture/audio compatibility code. These are not settings for other games.
 - **Boilerplates:** [workflow, commands and AI prompts](WORKFLOW.md), plus a [placeholder configuration](examples/config.template.toml).
 
 ## Setup
@@ -24,10 +24,12 @@ git -C PS2Recomp submodule update --init --recursive
 python -B apply.py --check
 python -B apply.py
 cmake -S PS2Recomp -B PS2Recomp/out/build -DPS2X_ENABLE_RUNTIME_LOGS=ON
-cmake --build PS2Recomp/out/build --config Debug --target ps2_recomp ps2x_tests
+cmake --build PS2Recomp/out/build --config RelWithDebInfo --target ps2_recomp ps2x_tests
 ```
 
 On Windows, use `py -3` if `python` is unavailable. The installer checks the pinned revision and refuses conflicting edits. It does not download games, generate game code, build, or launch anything. Newer upstream revisions require reviewing/rebasing the patch.
+
+For a single-configuration generator, also configure `-DCMAKE_BUILD_TYPE=RelWithDebInfo`. Updating an older patched checkout requires reviewing its local changes; `apply.py` does not upgrade a previous patch in place. Use a clean pinned checkout for this snapshot and keep private/generated inputs separate.
 
 Next: follow [the game-analysis workflow](WORKFLOW.md#analyze-and-generate-your-own-game). Setup alone does not produce a playable runner.
 
@@ -41,7 +43,9 @@ Open **http://127.0.0.1:8765/**. The viewer displays existing capture files; it 
 
 ## Status and scope
 
-The original Windows workspace has rendered menus, tracks and a starting grid. Playable racing remains unverified: the current investigation includes premature race results and intermittent guest-state corruption. Some audio behavior, debug-feature restoration and missing-content restoration remain unfinished. Linux/macOS support for this patch set has not been validated; Windows input automation is a development helper.
+The Windows development workspace reaches menus and races, supports manual driving, and has exercised different vehicles/tracks and lap progression. It still has substantial slow motion and camera-dependent missing road/water; full race completion, complete audio behavior and prototype-content restoration remain unverified. Linux/macOS have not been validated. Windows automation is a development helper, not a player requirement.
+
+This snapshot includes the GS lookup-table reduction from **2.75 MiB to 88 KiB**, without reducing texture quality. The corresponding local native suite passed **508 tests**. This is not a full-game compatibility or performance guarantee.
 
 The patch contains both general runtime changes and build-scoped Rumble code; it is one integrated patch, not independently selectable features. See [PATCH-CONTENTS.md](PATCH-CONTENTS.md) for scope and validation limits.
 
