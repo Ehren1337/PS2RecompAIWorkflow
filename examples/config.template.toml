@@ -1,0 +1,17 @@
+# BOILERPLATE ONLY: replace placeholders with your own Ghidra exports.
+# Start with the exporter-generated TOML; do not discard its verified stubs.
+[general]
+input = "private/YOUR_GAME/YOUR_GAME.ELF"
+output = "output-ghidra/"
+ghidra_output = "private/YOUR_GAME/map.csv"
+single_file_output = false
+patch_syscalls = false
+patch_cop0 = true
+patch_cache = true
+stubs = []
+skip = []
+
+# Bind only functions verified in this exact executable:
+# stubs belongs under [general], e.g. ["RUNTIME_HANDLER@0xVERIFIED_ADDRESS"].
+# Do not use ret0/ret1 just to hide an unexplained failure.
+# Add [patches] only after proving a specific instruction change is necessary.

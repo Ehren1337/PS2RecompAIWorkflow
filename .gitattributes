@@ -1,0 +1,5 @@
+* text=auto eol=lf
+# Patch context lines intentionally begin with a single space.
+*.patch text eol=lf -whitespace
+# Preserve the upstream license verbatim, including Markdown line breaks.
+LICENSE -whitespace
