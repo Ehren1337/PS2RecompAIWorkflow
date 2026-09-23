@@ -12,6 +12,7 @@ Snapshot: September 23, 2026. Upstream: `14b1e5cb39b4af7e6fc12f9a29fdc751efde49d
 - Native PCM/ADPCM voice, looping/phase and reverb facilities, plus focused native regression tests.
 - Pinned DiligentCore CMake integration, GPU GS shaders, ordered worker/submission batches, bounded VRAM ownership, asynchronous display readback and opt-in early depth readback.
 - Exact register-key comparisons and DMA/VIF/guest-address corrections. Retained optimizations preserve observed ordering and data; isolated benchmark gains are not whole-game speedup claims.
+- DMA spare-buffer reuse now retains its constructed bytes, avoiding repeated vector insertion for reused chains. Pending transfers still own their data and the single spare remains capped at 2 MiB. In two isolated runs, 20,000 chains of 64 x 16-byte chunks averaged 7.00 ms before and 4.85 ms after (about 31% less time). Large-payload runs showed no clear gain; this is not a whole-game frame-time or power result.
 - FPU translation and Ghidra exporter fixes. Windows RelWithDebInfo runtime inlining is enabled without fast-math or a new build tree.
 
 These are development changes, not completed PS2 subsystem implementations or automatic compatibility.
@@ -38,7 +39,7 @@ The integrated patch replaces the previous snapshot and must be applied to clean
 
 - The 86-file source patch is checked against the pinned upstream tree using an isolated temporary Git index; the active source checkout is not changed.
 - Python/PowerShell syntax and placeholder TOML are checked during publication.
-- Historical validation of this source snapshot: **563/563 native tests passed** in the Windows development workspace after the direct-launch change, including multi-format GS/VRAM coverage, native math/packet comparisons and configured Windows GPU checks. This publication does not rebuild the game or claim a fresh cross-platform test run.
+- Historical validation of this source snapshot: **563/563 native tests passed** in the Windows development workspace after the DMA reuse change, including queued/changing-size DMA ownership checks, multi-format GS/VRAM coverage, native math/packet comparisons and configured Windows GPU checks. This publication does not rebuild the game or claim a fresh cross-platform test run.
 - Menus, manual driving, race completion/results and different vehicles/tracks have been observed locally. Direct launch passed Tiberius/True Grits and Widow Maker/Flip Out checks; saved-pose reset and restart rearming passed. Earlier missing-road/water and object-shadow issues received fixes, but exhaustive visual coverage, full-speed busy gameplay, complete audio and prototype restoration remain unfinished.
 - Generated registration/functions, game data/assets, builds, logs, captures, Ghidra databases, original linker maps and personal notes are excluded. Native tests use synthetic fixtures.
 - Linux/macOS and a complete port from a clean public-only setup remain unverified. Users must analyze their own exact game and generate the missing game code.

@@ -11809,7 +11809,7 @@ index 988d6b2909234290ecd7657fa8f1a2844fd73489..ad7da9ecfb4e52b9f3ca1d6687f4c505
          PS2Runtime *runtime,
          const ps2x::iop::GameIdentity &identity,
 diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
-index 7cb2ba46376f929000033130a3393828dcb90cf0..234bd588a5c89d04d5df09490cf06bc25567684e 100644
+index 7cb2ba46376f929000033130a3393828dcb90cf0..7995155d017795991fc402f1efc96fda2e9b49a2 100644
 --- a/ps2xRuntime/src/lib/ps2_memory.cpp
 +++ b/ps2xRuntime/src/lib/ps2_memory.cpp
 @@ -9,6 +9,7 @@
@@ -12178,7 +12178,7 @@ index 7cb2ba46376f929000033130a3393828dcb90cf0..234bd588a5c89d04d5df09490cf06bc2
                  }
                  else if (qwc > 0)
                  {
-@@ -1559,6 +1709,28 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+@@ -1559,6 +1709,31 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
      return false;
  }
  
@@ -12190,7 +12190,10 @@ index 7cb2ba46376f929000033130a3393828dcb90cf0..234bd588a5c89d04d5df09490cf06bc2
 +    // accommodates those without retaining oversized loading-transfer peaks.
 +    if (bytes.capacity() <= 2u * 1024u * 1024u && bytes.capacity() > m_dmaChainScratch.capacity())
 +    {
-+        bytes.clear();
++        // Keep the constructed byte range so the next chain can overwrite it
++        // without rebuilding the vector one tag at a time. The walker tracks
++        // chainBytes separately and resizes to that exact length before queueing.
++        // Only consumed snapshots reach this spare; pending data stays owned.
 +        bytes.swap(m_dmaChainScratch);
 +    }
 +}
@@ -12207,7 +12210,7 @@ index 7cb2ba46376f929000033130a3393828dcb90cf0..234bd588a5c89d04d5df09490cf06bc2
  void PS2Memory::processPendingTransfers()
  {
      const bool hadGif = !m_pendingGifTransfers.empty();
-@@ -1624,6 +1796,7 @@ void PS2Memory::processPendingTransfers()
+@@ -1624,6 +1799,7 @@ void PS2Memory::processPendingTransfers()
              }
          }
      }
@@ -12215,7 +12218,7 @@ index 7cb2ba46376f929000033130a3393828dcb90cf0..234bd588a5c89d04d5df09490cf06bc2
      m_pendingGifTransfers.clear();
  
      const bool hadVif0 = !m_pendingVif0Transfers.empty();
-@@ -1682,6 +1855,7 @@ void PS2Memory::processPendingTransfers()
+@@ -1682,6 +1858,7 @@ void PS2Memory::processPendingTransfers()
              }
          }
      }
@@ -12223,7 +12226,7 @@ index 7cb2ba46376f929000033130a3393828dcb90cf0..234bd588a5c89d04d5df09490cf06bc2
      m_pendingVif0Transfers.clear();
  
      const bool hadVif1 = !m_pendingVif1Transfers.empty();
-@@ -1689,7 +1863,8 @@ void PS2Memory::processPendingTransfers()
+@@ -1689,7 +1866,8 @@ void PS2Memory::processPendingTransfers()
      {
          if (!p.chainData.empty())
          {
@@ -12233,7 +12236,7 @@ index 7cb2ba46376f929000033130a3393828dcb90cf0..234bd588a5c89d04d5df09490cf06bc2
          }
          else if (p.qwc > 0)
          {
-@@ -1740,6 +1915,11 @@ void PS2Memory::processPendingTransfers()
+@@ -1740,6 +1918,11 @@ void PS2Memory::processPendingTransfers()
              }
          }
      }
