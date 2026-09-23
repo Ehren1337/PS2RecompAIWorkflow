@@ -52,3 +52,10 @@ SLUS_*
 SLES_*
 .env
 .env.*
+
+# Private benchmark captures and profiler traces
+/Scripts/rumble-benchmark-spot.json
+*.etl
+*.dmp
+*.symcache
+/RUMBLE-RACING-SIMULATION-HANDOFF.md

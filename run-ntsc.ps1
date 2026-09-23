@@ -27,7 +27,11 @@ $previousWatches = $env:PS2_INSPECTOR_WATCHES
 $previousDevAI = $env:PS2_RUMBLE_DEV_AI
 $previousDevUpgrades = $env:PS2_RUMBLE_DEV_UPGRADES
 $previousDevGlitch = $env:PS2_RUMBLE_DEV_GLITCH
+$previousDepthPrefetch = $env:PS2_GS_DEPTH_PREFETCH
 try {
+# Verified retail depth-copy/read sequence. General runtime remains opt-in;
+# an explicit environment value (including 0) overrides this local default.
+if ($Build -eq 'Retail' -and [string]::IsNullOrEmpty($previousDepthPrefetch)) { $env:PS2_GS_DEPTH_PREFETCH = '1' }
 $env:PS2_RUMBLE_DEV_AI = if ($DevAI) { 'no-mercy' } else { $null }
 $env:PS2_RUMBLE_DEV_UPGRADES = if ($DevMaxUpgrades) { 'player-elite' } else { $null }
 $env:PS2_RUMBLE_DEV_GLITCH = if ($DevGlitchVisuals) { '1' } else { $null }
@@ -64,6 +68,7 @@ $process = Start-Process -FilePath $executable -ArgumentList ('"' + $gameElf + '
     $env:PS2_RUMBLE_DEV_AI = $previousDevAI
     $env:PS2_RUMBLE_DEV_UPGRADES = $previousDevUpgrades
     $env:PS2_RUMBLE_DEV_GLITCH = $previousDevGlitch
+    $env:PS2_GS_DEPTH_PREFETCH = $previousDepthPrefetch
 }
 Write-Output "Started NTSC $Build $Configuration runner (PID $($process.Id)). Logs: $runtimeDirectory"
 if (-not $NoInspector) { Write-Output 'Inspector enabled. Read it with .\tools\Inspect-Runtime.ps1' }

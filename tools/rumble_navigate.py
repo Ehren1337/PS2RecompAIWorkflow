@@ -2,12 +2,17 @@
 
     py -3 -B tools/rumble_navigate.py status
     py -3 -B tools/rumble_navigate.py wait track --timeout 60
+    py -3 -B tools/rumble_navigate.py wait race --timeout 90
     py -3 -B tools/rumble_navigate.py route vehicle
+    py -3 -B tools/rumble_navigate.py route vehicle --keyboard-profile "<same profile used at launch>"
     py -3 -B tools/rumble_navigate.py drive --start-node 155 --nodes 5
     py -3 -B tools/rumble_navigate.py race-status
     py -3 -B tools/rumble_navigate.py wait-results --timeout 120
     py -3 -B tools/rumble_navigate.py debug-status
     py -3 -B tools/rumble_navigate.py camera-status
+    py -3 -B tools/rumble_navigate.py selection-status
+    py -3 -B tools/rumble_navigate.py select vehicle --identity 2
+    py -3 -B tools/rumble_navigate.py select track --identity 0
 
 Requires run-ntsc.ps1's retail inspector watches. Writes no files, launches
 nothing, never restarts, and stops on unknown states or unsupported runtime work.
@@ -30,17 +35,7 @@ MENUS = {"main": 100, "mode": 200, "vehicle": 1200, "track": 1300}
 
 
 def snapshot():
-    # Windows can briefly deny an open while the inspector replaces its file.
-    # Retry that publication window, but retain the normal age/PID checks and
-    # fail on persistent I/O errors instead of acting on a cached snapshot.
-    for attempt in range(6):
-        try:
-            report = json.loads(research.REPORT.read_text(encoding="utf-8-sig"))
-            break
-        except (PermissionError, FileNotFoundError):
-            if attempt == 5:
-                raise
-            time.sleep(0.05)
+    report = research.read_inspector_report()
     sample = report.get("snapshot")
     if report.get("schema_version") != 1 or not sample or sample.get("error"):
         raise ValueError("No valid inspector sample")
@@ -106,14 +101,17 @@ class Navigator:
             raise RuntimeError("Runtime has unsupported work; route stopped: " + json.dumps(compact(s)))
         return s
 
-    def wait(self, label, predicate, *, after=-1, advancing=None):
+    def wait(self, label, predicate, *, after=-1, advancing=None, increasing=False):
+        # Race clocks can reset during loading. Callers waiting for active play
+        # can require forward progress rather than accepting any changed value.
         print("Waiting: " + label, flush=True)
         deadline, previous = time.monotonic() + self.timeout, None
         while True:
             s = self.read()
             fresh = s["sequence"] > after
             progress = advancing is None or (previous is not None and
-                s["sequence"] > previous["sequence"] and advancing(s) != advancing(previous))
+                s["sequence"] > previous["sequence"] and
+                (advancing(s) > advancing(previous) if increasing else advancing(s) != advancing(previous)))
             if fresh and predicate(s) and progress:
                 print("Reached: " + label + " " + json.dumps(compact(s)), flush=True)
                 return s
@@ -127,6 +125,16 @@ class Navigator:
         return self.wait(name + " menu ready and cycling",
                          lambda s: s["menu"] == MENUS[name] and s["ready"],
                          after=after, advancing=lambda s: s["cycle"])
+
+    def race(self, after=-1):
+        # Loading can briefly expose a phase/clock combination from different
+        # initialization steps. Require two fresh, advancing play samples, then
+        # validate the actual live car/track before a driving caller proceeds.
+        self.wait("active race after countdown",
+                  lambda s: s.get("race_phase") == 4 and s.get("race_clock", 0) > 3600,
+                  after=after, advancing=lambda s: s["race_clock"], increasing=True)
+        with RaceProbe(self) as probe:
+            return probe.state()
 
     def press(self, key, hold_ms=1000):
         # Revalidate immediately before the paired keypress. The shared helper
@@ -171,11 +179,56 @@ class Navigator:
                            after=released["sequence"])
         return sample
 
+    def select(self, kind, identity):
+        """Reach an exact visible card using bounded, released normal input."""
+        if kind not in {"vehicle", "track"}:
+            raise ValueError("Selection requires vehicle or track")
+        self.menu(kind)
+        with RaceProbe(self, selection_only=True) as probe:
+            catalog = probe.catalog["vehicles" if kind == "vehicle" else "tracks"]
+            field = "driver_id" if kind == "vehicle" else "track_id"
+            if identity not in {row[field] for row in catalog}:
+                raise ValueError("Identity outside verified retail catalog")
+            seen = set()
+            for _ in range(len(catalog) + 1):
+                self.wait(kind + " card settled", lambda s: probe.selection_state()["ready"],
+                          advancing=lambda s: s["cycle"])
+                current = probe.selection_state()
+                if current["kind"] != kind or not current["ready"]:
+                    raise RuntimeError("Selection changed before input; stopped")
+                if current[field] == identity:
+                    return current
+                if current[field] in seen:
+                    raise RuntimeError("Selection cycled without target; it may be locked or unavailable")
+                seen.add(current[field])
+
+                def changed():
+                    now = probe.selection_state()
+                    if now["kind"] != kind:
+                        raise RuntimeError("Menu changed while selecting; releasing input")
+                    return not now["ready"] or now[field] != current[field]
+
+                # Stop holding as soon as the game begins moving a card, then
+                # wait for its real animation and key release before proceeding.
+                research.press_key("right", 2000, until=changed)
+                self.wait_released()
+            raise RuntimeError("Bounded selection limit reached; no further input")
+
     def route(self, target):
         s = self.read()
         if (not s["metrics"].get("music_playing") and not s["metrics"].get("movie_closes")
                 and not s["metrics"].get("movie_playing")):
-            self.wait("memory-card Continue", lambda s: s["pc"] == 0x129380)
+            # Startup spends most samples in its frame wait (1227D4), not
+            # the brief text draw (129380). Require the known pre-movie
+            # frontend state and fresh, advancing neutral controller reads.
+            # This sends ordinary Cross; no guest call or state is bypassed.
+            self.wait("startup Continue accepting controller input",
+                      lambda s: s["pc"] in {0x129380, 0x1227d4} and
+                      s["menu"] == 100 and s["pending"] == 0 and s["cycle"] == 0 and
+                      s["transition"] == 0 and s["pad_released"] and
+                      not any(s["metrics"].get(k, 0) for k in
+                              ("music_playing", "movie_closes", "movie_playing")),
+                      advancing=lambda s: s["pad_reads"], increasing=True)
             self.press("cross")
         while self.read()["metrics"].get("movie_closes", 0) < 2:
             s = self.wait("opening movie started", lambda s: bool(s["metrics"].get("movie_playing")))
@@ -225,7 +278,7 @@ class RaceProbe:
     link is a test route, not a reconstruction of AI strategy/shortcut choice.
     No game addresses are called, and no process memory is written.
     """
-    def __init__(self, navigator, *, observe_finish=False, camera_only=False):
+    def __init__(self, navigator, *, observe_finish=False, camera_only=False, selection_only=False):
         if os.name != "nt":
             raise ValueError("Live race probing currently requires the Windows development host")
         from rumble_menu_research import MenuResearch
@@ -252,6 +305,7 @@ class RaceProbe:
             raise ctypes.WinError(ctypes.get_last_error())
         try:
             original = MenuResearch("Retail")  # Verifies the owned ELF hash.
+            self.catalog = original.catalog()
 
             def signature(address):
                 for segment in original.segments:
@@ -282,6 +336,9 @@ class RaceProbe:
             if len(candidates) != 1:
                 raise ValueError("Expected one verified retail EE memory region")
             self.base = candidates[0]
+            if selection_only:
+                self.selection_state()
+                return
             if camera_only:
                 # Camera inspection must also work in menus, before a race has
                 # allocated its player/track. Existing race callers stay strict.
@@ -303,6 +360,43 @@ class RaceProbe:
         if self.handle:
             self.kernel.CloseHandle(self.handle)
             self.handle = None
+
+    def selection_state(self):
+        """Read stable card fields, not temporary mapped track-index globals."""
+        state = self.nav.read()
+        frontend = self.word(0x1f28fc)
+        if not frontend:
+            raise RuntimeError("No active frontend selection")
+
+        def fields():
+            return (self.guest(frontend, 12), self.guest(frontend + 0x78c, 3),
+                    self.guest(frontend + 0x7ac, 1), self.guest(frontend + 0x7c0, 1),
+                    self.guest(frontend + 0x8f7, 1), self.guest(frontend + 0x90c, 1))
+
+        first = fields()
+        stable = first == fields() and frontend == self.word(0x1f28fc)
+        menu = struct.unpack_from("<h", first[0])[0]
+        kind = {1200: "vehicle", 1300: "track"}.get(menu)
+        if kind is None:
+            raise RuntimeError("Vehicle or track selection menu required")
+        ready = stable and state["ready"] and state["menu"] == menu
+        result = {"kind": kind, "ready": False, "read_only": True}
+        if kind == "vehicle":
+            driver, car_class = first[1][0], first[1][2]
+            ready = ready and first[3] == b"\0" and driver == first[2][0]
+            if driver >= 36 or car_class >= 3:
+                if ready: raise ValueError("Invalid retail vehicle card")
+                return result
+            result.update(driver_id=driver, name=self.catalog["vehicles"][driver]["name"],
+                          car_class=car_class, ready=ready)
+        else:
+            position = first[4][0]
+            ready = ready and first[5] == b"\0"
+            if position >= len(self.catalog["tracks"]):
+                if ready: raise ValueError("Invalid retail track card")
+                return result
+            result.update(self.catalog["tracks"][position], ready=ready)
+        return result
 
     def __enter__(self):
         return self
@@ -421,6 +515,44 @@ class RaceProbe:
                 "results_ready": (finished and phase == 13 and 1 <= rank <= 8 and
                                   centiseconds == (ticks + 1) // 12)}
 
+    def particle_state(self):
+        """Read live retail particle counts, not visibility or power-up identity.
+
+        Retail134830 walks the list at GP-7DC (GP=1F16F0), next at+0.
+        Its normalized complete body matches February ParticleSystem_UpdateAll.
+        Retail132970/133980 render +178 particles;131E30 advances a ring whose
+        capacity is +174. A bounded, best-effort read never pauses the game.
+        """
+        self.nav.read()
+        for _ in range(3):
+            if self.word(0x1f22a0) != self.car or self.word(0x1f2740) != self.track:
+                raise RuntimeError("Race changed; particle observation stopped")
+            head = self.word(0x1f0f14)
+            address, seen, rows = head, set(), []
+            while address:
+                if (address in seen or len(seen) >= 512 or address % 4 or
+                        not 0x100000 <= address <= 0x2000000 - 0x180):
+                    raise ValueError("Invalid or oversized retail particle-system list")
+                seen.add(address)
+                node = self.guest(address, 0x180)
+                following = struct.unpack_from("<I", node)[0]
+                capacity, count = struct.unpack_from("<2i", node, 0x174)
+                if not 0 <= count <= capacity <= 16384:
+                    raise ValueError("Invalid retail particle count/capacity")
+                rows.append((address, following, count, capacity))
+                address = following
+            # Validate list membership after traversal. Counts can still change
+            # during the read; these are explicitly not an atomic frame snapshot.
+            if (head == self.word(0x1f0f14) and
+                    all(self.word(at) == following for at, following, _, _ in rows) and
+                    self.word(0x1f22a0) == self.car and self.word(0x1f2740) == self.track):
+                return {"systems": len(rows), "nonempty_systems": sum(count > 0 for _, _, count, _ in rows),
+                        "live_particles": sum(count for _, _, count, _ in rows),
+                        "allocated_particle_slots": sum(capacity for _, _, _, capacity in rows),
+                        "read_only": True, "atomic_snapshot": False,
+                        "scope": "All live systems; not visible particles or power-up counts"}
+        raise RuntimeError("Particle-system list changed; retry observation")
+
     def trail_state(self):
         """External equivalent of February's read-only TRAILS console command.
 
@@ -484,7 +616,14 @@ class RaceProbe:
         driver = self.guest(0x1f2172 + slot * 8, 1)[0]
         if driver >= 36:
             raise ValueError("Player driver ID outside verified retail catalog")
+        chosen = self.guest(0x2288b0, 2)
+        track = next((row for row in self.catalog["tracks"]
+                      if (row["group"], row["variant"]) == tuple(chosen)), None)
+        if track is None or chosen != self.guest(0x2288b0, 2):
+            raise RuntimeError("Confirmed race track is invalid or changing")
         return {"clock": self.word(0x1f22b8), "driver_id": driver,
+                "driver_name": self.catalog["vehicles"][driver]["name"],
+                "track_id": track["track_id"], "track_name": track["name"],
                 "position": self.floats(self.car + 64, 3),
                 "forward": self.floats(body + 0xc0, 3), "speed": self.floats(body + 0x154, 1)[0],
                 "controls": self.guest(physics + 0x34, 1)[0],
@@ -600,17 +739,35 @@ def drive(navigator, start_node, node_limit=5, tick_limit=12000, *, complete_lap
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("command", choices=("status", "wait", "route", "drive", "lap", "race-status",
-                                       "wait-results", "debug-status", "camera-status"))
-    p.add_argument("target", choices=MENUS, nargs="?")
+                                       "wait-results", "debug-status", "camera-status", "selection-status", "select"))
+    p.add_argument("target", choices=(*MENUS, "race"), nargs="?")
     p.add_argument("--timeout", type=float, default=45, help="Seconds per condition; never triggers a restart")
     p.add_argument("--start-node", type=int, help="Researched route-node hint for the current track")
     p.add_argument("--nodes", type=int, default=5, help="Maximum route points to reach in a driving test")
     p.add_argument("--race-ticks", type=int, help="1200-Hz driving limit (default: drive 12000, lap 180000)")
+    p.add_argument("--identity", type=int, help="Verified catalog driver/track ID for select")
+    p.add_argument("--keyboard-profile", type=Path, help="Same PCSX2 keyboard profile used to launch this runner")
     a = p.parse_args()
     if not 1 <= a.timeout <= 120 or (a.command in {"wait", "route"} and not a.target):
         p.error("Supply a target for wait/route and a timeout in 1..120")
+    if a.command == "select" and (a.target not in {"vehicle", "track"} or a.identity is None):
+        p.error("select requires vehicle/track and --identity")
+    if a.target == "race" and a.command != "wait":
+        p.error("race is a wait target; start it through the normal track-menu input")
     try:
+        if a.keyboard_profile:
+            research.configure_navigation_profile(a.keyboard_profile)
         n = Navigator(a.timeout)
+        if a.command == "wait" and a.target == "race":
+            print(json.dumps(n.race()))
+            return
+        if a.command == "select":
+            print(json.dumps(n.select(a.target, a.identity)))
+            return
+        if a.command == "selection-status":
+            with RaceProbe(n, selection_only=True) as probe:
+                print(json.dumps(probe.selection_state()))
+            return
         if a.command == "camera-status":
             with RaceProbe(n, camera_only=True) as probe:
                 print(json.dumps(probe.camera_state()))
@@ -618,7 +775,9 @@ def main():
         if a.command in {"race-status", "wait-results", "debug-status"}:
             with RaceProbe(n, observe_finish=True) as probe:
                 if a.command == "debug-status":
-                    print(json.dumps(probe.trail_state()))
+                    result = probe.trail_state()
+                    result["particles"] = probe.particle_state()
+                    print(json.dumps(result))
                     return
                 if a.command == "wait-results":
                     initial = n.read()

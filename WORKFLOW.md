@@ -10,9 +10,17 @@ This is the portable companion to our personal workspace guide. It includes the 
 | Our general additions | Structured inspector, bounded CPU history, frame capture/contact sheets, hidden window mode, renderer/scheduler/IOP/audio corrections and focused tests. |
 | Development helpers | Python experiments, inspector reader, local browser viewer, rebuild and headless-analysis helpers. These are custom tools, not upstream commands. |
 | Rumble-specific research | Exact-build hashes, verified names/addresses, asset formats, menu watches, normal-input routes and native picture/audio profiles. Adapt deliberately for another game. |
-| Unfinished | Full race/results progression, slow motion, missing road/water, complete audio behavior, debug/content restoration and validation on other operating systems. Passing a test or rendering a menu is not proof of completion. |
+| Unfinished | Exhaustive race/results coverage, busy-scene slow motion, remaining visual defects, complete audio behavior, debug/content restoration and validation on other operating systems. Passing a test or rendering a menu is not proof of completion. |
 
 The intended player-facing port is native C++. Python speeds up research and test orchestration; there is no embedded Python/pybind11 layer in this package.
+
+## Dependencies and renderers
+
+Configure `PS2X_ENABLE_DILIGENT_GS=ON` for the experimental GPU path. CMake fetches DiligentCore revision `b37336e5aac0c944a6d8f51b9f453ba3813738b5` and required sources; the whole engine/samples are not required. Select `PS2_GS_GPU=d3d11`, `d3d12` or `vulkan` at launch on supported hosts. Current live work uses D3D11. Shared OpenGL shader tests pass, but the game's OpenGL adapter and non-Windows operation remain unvalidated. DX10 is not provided. DX12 needs DXC/Shader Model 6 and a discoverable `dxcompiler.dll`.
+
+`PS2X_ENABLE_FFMPEG=ON` builds movie support. Windows uses the configured shared FFmpeg SDK download; `-DPS2X_FFMPEG_ROOT=<SDK_DIRECTORY>` reuses an SDK with `include/` and `bin/`, import libraries and runtime DLLs. Other hosts need pkg-config development packages `libavcodec`, `libavformat`, `libavutil`, `libswresample`, `libswscale`. `ffmpeg.exe` alone does not satisfy library dependencies. Some Python offline decode comparisons separately need FFmpeg command-line tools. Movie decoding is not the PS2 audio-driver adapter.
+
+CMake also resolves the configured raylib/ImGui dependencies. See patched runtime CMakeLists.txt for platform conditions. Retain third-party licenses when distributing binaries. This repository contains no SDK DLLs or game executables.
 
 ## Analyze and generate your own game
 
@@ -102,6 +110,38 @@ py -3 -B tools/rumble_navigate.py wait track --timeout 60
 
 `Rebuild-Game.ps1` is a Windows/MSBuild helper. It overwrites the active config and verified generated files and reuses build/log paths. Its February-only instruction patch does not apply to retail. The native code's game guards do not make these helper scripts universal.
 
+## Direct development race launch
+
+For the exact supported NTSC retail build, repeated race setup can use original game functions instead of menu input. After preparing your assets/generated code and stopping the previous runner:
+
+```powershell
+$env:PS2_GS_GPU='d3d11'
+$env:PS2_GS_THREADED='1'
+$env:PS2_GS_GPU_PRESENT='1'
+$env:PS2_GS_GPU_ASYNC_PRESENT='1'
+$env:PS2_GS_GPU_PRESENT_COMPARE='1'
+$env:PS2_GS_DEPTH_PREFETCH='1'
+$env:PS2_GS_DEPTH_PREFETCH_COMPARE='1'
+$env:PS2_RUMBLE_NATIVE_VU='1'
+$env:PS2_RUMBLE_VU_COMPARE='1'
+foreach ($suffix in 'CLIP','REFLECT','LIT','REFLECT_LIT','DUAL_BASIS','QUAD') {
+    Set-Item -Path "Env:PS2_RUMBLE_NATIVE_VU_$suffix" -Value '1'
+}
+py -3 -B Scripts/rumble_dev.py launch --car Tiberius --track "True Grits" --720p --no-frame-capture --no-ai
+```
+
+Both arguments are required; names or catalog IDs work. Preset: one player, eight cars, three laps, Forgiving, power-ups active. `--car-class rookie|pro|elite`, `--max-upgrades` and `--ai` are separate choices. The adapter retains initialization/card polling/cleanup, skips intro presentation, invokes original race preparation and uses original loading. Ordinary launches retain menus. It does not change game files or saved unlock records. Another game requires its own verified interfaces.
+
+Park first and run `py -3 -B Scripts/rumble_dev.py save-spot` to overwrite one ignored local `Scripts/rumble-benchmark-spot.json`; no pose is shipped. Add `--benchmark-spot` to the next launch for that same track. Three game seconds after GO, original recovery restores the pose once; restart rearms it. This is not a full save state: NPC/world state and lap progress are not restored, and recovery clears motion, active power-ups and skid history. AI plus teleport has not been live-validated. It is not deterministic whole-scene replay.
+
+## Numeric slowdown profiling
+
+`tools/rumble_profile.py` uses Windows/PDB counters. Enable `PS2_VU_PROFILE=1` before launch, then use `--trigger slowdown --pre 3 --seconds 15` or `--trigger now`. It overwrites `analysis/rumble-timing.json`. `--objects` requires `PS2_RUMBLE_OBJECT_PROFILE=1` and records bounded instance/model/producer attribution, not exact per-object GPU cost. `--stacks --stack-lines` adds measured thread suspensions; keep them off unless needed.
+
+`tools/rumble_etw.py` needs Windows Performance Toolkit WPR/xperf and administrator rights for collection. It performs a bounded farm driving experiment and overwrites `analysis/rumble-cpu.etl` and `analysis/rumble-etw.json`; do not use it concurrently with manual driving. `--gpu` adds graphics events. Short combined traces can be several GB; reanalyze before collecting more. Queue completion latency is not exact shader execution time. No captures, PDBs or reports are distributed.
+
+Record PID/build, game-clock delta versus monotonic time, pose/track/car, settings and measurement overhead. Host FPS differs from simulation speed. Inspector logs can show completion before buffered stdout. Farm slowdown still involves CPU geometry/submission and graphics transfer/completion dependencies; no single object explains every slowdown.
+
 ## Ghidra helpers
 
 Set `GHIDRA_HOME` to your installation; the wrapper uses that distribution's launcher and supported JDK. Example for an already imported, analyzed retail program:
@@ -153,7 +193,11 @@ Exporters can produce decompiled game code locally. Those products belong in ign
 
 > Verify the runner and current evidence first. Find the first unmet condition using inspector state, caller/function analysis and one fresh image. Use a contact sheet if timing/flicker matters. Test a concrete hypothesis in Python when useful; use native tests for C++ ownership, scheduling, audio or rendering behavior. Do not hide unsupported behavior with success stubs. Confirm the visible result and stop broad testing once the relevant checks pass.
 
-**Automate a repeated route:**
+**Repeat a benchmark scene:**
+
+> Prefer verified direct car/track launch and one saved pose for this retail build. Retain initialization/loading and reject unknown state. Measure game-clock progress and matching workloads. A pose is not a full save state. For another game, validate equivalent interfaces; never copy addresses.
+
+**Test a menu route:**
 
 > Observe the ordinary flow first. Put test navigation in a separate game script. Wait for fresh, verified source readiness, send normal input, then wait for destination readiness or a clear failure. Use bounded timeouts and stop if PID/build/state changes. Skip a movie with normal input only after playback starts. Do not patch progression or equate a timeout with a stopped process.
 
@@ -216,7 +260,7 @@ Keep offline analysis in Python where appropriate. Move verified runtime behavio
 
 ### Test navigation without bypassing initialization
 
-A separate development script should send normal input, wait for verified state, and stop safely on uncertainty. A word such as “Continue” is a label, not automatically a callable menu function.
+When testing the menus themselves, a separate development script should send normal input, wait for verified state, and stop safely on uncertainty. For repeated race benchmarks use direct launch above. A word such as “Continue” is a label, not automatically a callable menu function.
 
 ```text
 PSEUDOCODE — requires game-specific adapters, not an installed command.
@@ -267,9 +311,9 @@ Keyboard D-pad and analog-stick bindings are different. A profile may use arrows
 5. Compare meaningful intervals and repeated scenes; rotating models and different visible geometry change workload.
 6. Change one cause, preserve rendering/behavior, run native regressions and retest the live trigger.
 
-Recent **local** work includes early rejection of depth-occluded triangles and compaction of GS swizzle lookup tables from **2.75 MiB to 88 KiB**. The latter removes repeated offsets; it does not shrink game textures, reduce image quality, or represent that reduction in total memory usage. Multi-format reads/writes and VRAM-boundary regression checks passed within a 508-test suite. This is the dated local validation result for the source snapshot included here, not a test count promised for upstream or every platform.
+Recent **local** work includes early rejection of depth-occluded triangles and compaction of GS swizzle lookup tables from **2.75 MiB to 88 KiB**. The latter removes repeated offsets; it does not shrink game textures, reduce image quality, or represent that reduction in total memory usage. Multi-format reads/writes and VRAM-boundary regression checks passed within a 563-test suite. This is the dated local validation result for the source snapshot included here, not a test count promised for upstream or every platform.
 
-These changes have **not resolved severe slow motion** in the reference project. Memory savings do not imply a proportional speedup. Preserve measured limits, and do not alter game time or silently discard bad frames to label a port “full speed.”
+These changes have **not eliminated busy-scene slow motion** in the reference project. Memory savings do not imply a proportional speedup. Preserve measured limits, and do not alter game time or silently discard bad frames to label a port “full speed.”
 
 
 ## Compare revisions and restore content

@@ -1,15 +1,19 @@
 # Patch contents and validation
 
-Snapshot: September 20, 2026. Upstream: `14b1e5cb39b4af7e6fc12f9a29fdc751efde49d7` from ran-j/PS2Recomp.
+Snapshot: September 23, 2026. Upstream: `14b1e5cb39b4af7e6fc12f9a29fdc751efde49d7` from ran-j/PS2Recomp.
 
 ## General runtime and analysis changes
 
 - Structured inspector, read-only RAM watches, bounded history, sampled frames/contact sheets and hidden-window presentation.
 - GS addressing/transfer/drawing corrections, depth rejection before unnecessary texture work, and compact swizzle lookup tables: **2.75 MiB to 88 KiB**, preserving image data and address behavior.
-- VU instruction/readiness and DMA transfer handling, with opt-in bounded transfer diagnostics. The current experimental per-instruction clipping trace is excluded.
-- Keyboard mappings, host output size/aspect/filter controls, frame latching and presentation work. Rendering remains CPU rasterization with OpenGL presentation; changing window size does not raise internal resolution.
+- VU instruction/readiness and DMA transfer handling, with opt-in bounded transfer diagnostics. Diagnostics remain opt-in and bounded; generated program dumps are not distributed.
+- Keyboard mappings, host output size/aspect/filter controls, frame latching and presentation work. The optional Diligent GPU backend shares GS operations across APIs, with ordered CPU coherence/fallback paths and raylib window presentation. Changing window size does not raise internal resolution.
 - Scheduler/callback ownership, COP0 Count and blocked-state observations; SIF/RPC, CD/MPEG, pad/TTY and memory integration.
 - Native PCM/ADPCM voice, looping/phase and reverb facilities, plus focused native regression tests.
+- Pinned DiligentCore integration, GPU GS shaders, ordered worker/submission batches, bounded VRAM ownership, asynchronous display readback and opt-in early depth readback.
+- Exact register-key comparisons and DMA/VIF/guest-address corrections. Isolated benchmark gains are not whole-game speedup claims.
+- Pinned DiligentCore CMake integration, GPU GS shaders, ordered worker/submission batches, bounded VRAM ownership, asynchronous display readback and opt-in early depth readback.
+- Exact register-key comparisons and DMA/VIF/guest-address corrections. Retained optimizations preserve observed ordering and data; isolated benchmark gains are not whole-game speedup claims.
 - FPU translation and Ghidra exporter fixes. Windows RelWithDebInfo runtime inlining is enabled without fast-math or a new build tree.
 
 These are development changes, not completed PS2 subsystem implementations or automatic compatibility.
@@ -19,7 +23,11 @@ These are development changes, not completed PS2 subsystem implementations or au
 - `rumble_audio.cpp` and related reverb state implement handwritten, build-scoped AUDIO.IRX service behavior; unsupported cases remain explicit.
 - `rumble_picture.cpp` orchestrates picture decode/upload using the user's generated guest functions.
 - `rumble_video.cpp` integrates Video Options through retail menu/font/input routines and applies retail presentation policy. Host sizing/filter settings currently reset on launch.
-- `rumble_dev.cpp` provides opt-in original No Mercy NPC player driving and Single Race upgrade overrides, retaining manual play. Intentional glitch presentation is separately opt-in.
+- `rumble_dev.cpp` provides opt-in original No Mercy NPC player driving and Single Race upgrade overrides, retaining manual play. It also provides direct car/track race preparation and a once-per-countdown saved-pose recovery. It also provides direct car/track race preparation and once-per-countdown saved-pose recovery. Intentional glitch presentation is separately opt-in.
+- `rumble_vu_native.cpp` provides handwritten exact-build geometry specializations with bounded interpreter comparisons and explicit guards, not a universal VU replacement.
+- Windows/PDB numeric profiling and WPR/xperf CPU/wait/GPU analysis helpers reuse private outputs.
+- `rumble_vu_native.cpp` implements handwritten exact-build geometry specializations with bounded interpreter comparisons and explicit guards; it is not a universal VU replacement.
+- Windows/PDB numeric profiling and WPR/xperf CPU/wait/GPU analysis helpers retain bounded counters and reuse private output paths.
 - Hash-guarded Ghidra function repair/import scripts, Python model/audio/menu/camera research, state-checked input routes and developer controls in `Scripts/rumble_dev.py`.
 
 Addresses, hashes, protocol constants and identified names are analysis metadata. No game executable, complete symbol database, original source or decompiled/generated game bodies are distributed. Prototype candidates remain an audit, not playable extra entries; debug/content restoration and Lua integration remain unfinished.
@@ -32,16 +40,16 @@ The integrated patch replaces the previous snapshot and must be applied to clean
 
 ## Validation and limits
 
-- The 73-file source patch is checked against the pinned upstream tree using an isolated temporary Git index; the active source checkout is not changed.
+- The 86-file source patch is checked against the pinned upstream tree using an isolated temporary Git index; the active source checkout is not changed.
 - Python/PowerShell syntax and placeholder TOML are checked during publication.
-- Historical validation of this source snapshot: **508/508 native tests passed** in the Windows development workspace after the compact-table change, including multi-format GS addresses/reads/writes and VRAM-boundary coverage. This publication does not rebuild the game or claim a fresh cross-platform test run.
-- Menus, manual driving, different vehicles/tracks and lap progression have been observed locally. Substantial slow motion, camera-dependent missing road/water, complete race/results progression and some audio behavior remain unresolved or unverified.
+- Historical validation of this source snapshot: **563/563 native tests passed** in the Windows development workspace after the direct-launch change, including multi-format GS/VRAM coverage, native math/packet comparisons and configured Windows GPU checks. This publication does not rebuild the game or claim a fresh cross-platform test run.
+- Menus, manual driving, race completion/results and different vehicles/tracks have been observed locally. Direct launch passed Tiberius/True Grits and Widow Maker/Flip Out checks; saved-pose reset and restart rearming passed. Earlier missing-road/water and object-shadow issues received fixes, but exhaustive visual coverage, full-speed busy gameplay, complete audio and prototype restoration remain unfinished.
 - Generated registration/functions, game data/assets, builds, logs, captures, Ghidra databases, original linker maps and personal notes are excluded. Native tests use synthetic fixtures.
 - Linux/macOS and a complete port from a clean public-only setup remain unverified. Users must analyze their own exact game and generate the missing game code.
 
 ## Files changed inside PS2Recomp
 
-Apply together. `ps2xRuntime/src/runner/register_functions.cpp` is deliberately excluded: generate it from your own executable.
+Apply together. Generated registration/functions are excluded; regenerate them from your own executable.
 
 - `ps2xIOP/CMakeLists.txt`
 - `ps2xIOP/include/ps2x/iop/iop_host.h`
@@ -56,18 +64,24 @@ Apply together. `ps2xRuntime/src/runner/register_functions.cpp` is deliberately 
 - `ps2xRecomp/src/lib/fpu_translator.cpp`
 - `ps2xRecomp/tools/ghidra/ExportPS2Functions.java`
 - `ps2xRuntime/CMakeLists.txt`
+- `ps2xRuntime/cmake/DiligentGS.cmake`
 - `ps2xRuntime/include/game_overrides.h`
 - `ps2xRuntime/include/ps2_call_list.h`
 - `ps2xRuntime/include/ps2_inspector.h`
 - `ps2xRuntime/include/ps2_runtime.h`
 - `ps2xRuntime/include/ps2_runtime_macros.h`
+- `ps2xRuntime/include/rumble_vu_native.h`
 - `ps2xRuntime/include/runtime/ee_scheduler.h`
+- `ps2xRuntime/include/runtime/gs/gs_backend.h`
 - `ps2xRuntime/include/runtime/gs/gs_cpu_backend.h`
+- `ps2xRuntime/include/runtime/gs/gs_diligent_device.h`
 - `ps2xRuntime/include/runtime/gs/gs_frontend.h`
 - `ps2xRuntime/include/runtime/gs/gs_types.h`
 - `ps2xRuntime/include/runtime/gs/ps2_gs_memory.h`
+- `ps2xRuntime/include/runtime/ps2_address.h`
 - `ps2xRuntime/include/runtime/ps2_audio.h`
 - `ps2xRuntime/include/runtime/ps2_audio_reverb.h`
+- `ps2xRuntime/include/runtime/ps2_memory.h`
 - `ps2xRuntime/include/runtime/ps2_pad.h`
 - `ps2xRuntime/include/runtime/ps2_vu1.h`
 - `ps2xRuntime/src/lib/Kernel/EeScheduler.cpp`
@@ -88,7 +102,10 @@ Apply together. `ps2xRuntime/src/runner/register_functions.cpp` is deliberately 
 - `ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp`
 - `ps2xRuntime/src/lib/game_overrides.cpp`
 - `ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp`
+- `ps2xRuntime/src/lib/gs/gs_diligent_backend.cpp`
+- `ps2xRuntime/src/lib/gs/gs_diligent_device.cpp`
 - `ps2xRuntime/src/lib/gs/gs_frontend.cpp`
+- `ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp`
 - `ps2xRuntime/src/lib/ps2_audio.cpp`
 - `ps2xRuntime/src/lib/ps2_audio_vag.cpp`
 - `ps2xRuntime/src/lib/ps2_inspector.cpp`
@@ -98,9 +115,11 @@ Apply together. `ps2xRuntime/src/runner/register_functions.cpp` is deliberately 
 - `ps2xRuntime/src/lib/ps2_memory.cpp`
 - `ps2xRuntime/src/lib/ps2_pad.cpp`
 - `ps2xRuntime/src/lib/ps2_runtime.cpp`
+- `ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp`
 - `ps2xRuntime/src/lib/rumble_dev.cpp`
 - `ps2xRuntime/src/lib/rumble_picture.cpp`
 - `ps2xRuntime/src/lib/rumble_video.cpp`
+- `ps2xRuntime/src/lib/rumble_vu_native.cpp`
 - `ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp`
 - `ps2xRuntime/src/lib/vu/ps2_vu1_detail.h`
 - `ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp`
@@ -109,12 +128,14 @@ Apply together. `ps2xRuntime/src/runner/register_functions.cpp` is deliberately 
 - `ps2xTest/src/code_generator_tests.cpp`
 - `ps2xTest/src/main.cpp`
 - `ps2xTest/src/pad_input_tests.cpp`
+- `ps2xTest/src/ps2_gs_gpu_tests.cpp`
 - `ps2xTest/src/ps2_gs_tests.cpp`
 - `ps2xTest/src/ps2_memory_tests.cpp`
 - `ps2xTest/src/ps2_runtime_expansion_tests.cpp`
+- `ps2xTest/src/ps2_runtime_interrupt_tests.cpp`
 - `ps2xTest/src/ps2_runtime_io_tests.cpp`
 - `ps2xTest/src/ps2_runtime_kernel_tests.cpp`
 - `ps2xTest/src/ps2_sif_rpc_tests.cpp`
 - `ps2xTest/src/ps2_vu1_tests.cpp`
 
-Patch SHA-256: `44a78bf2ebb68785e066ee8d4c7bbab9060403d747c292b5e20a711b5b444500`.
+Patch SHA-256: `7ff44ccab8737784984a9a7aa70cd2b723c6f2dc2abf3d0e3ff3ee3404d87e71`.

@@ -8,7 +8,7 @@ Source patches and development tools from an ongoing Rumble Racing reversing pro
 
 - **Runtime additions:** JSON inspector, bounded history, frame contact sheets, hidden-window capture, keyboard mapping, presentation controls, and fixes to graphics, scheduling, audio, and IOP/RPC handling.
 - **Development tools:** local browser viewer, Python research helpers, PowerShell rebuild/inspection scripts, and Ghidra analysis/export scripts.
-- **Rumble-specific work:** build-guarded symbol/function repairs, state-checked menu automation, optional developer driving/upgrades, native Video Options, asset-format readers, and handwritten picture/audio compatibility code. These are not settings for other games.
+- **Rumble-specific work:** build-guarded symbol/function repairs, state-checked menu automation, direct car/track launch, saved benchmark poses, optional developer driving/upgrades, validated native VU paths, native Video Options, asset-format readers, and handwritten picture/audio compatibility code. These are not settings for other games.
 - **Boilerplates:** [workflow, commands and AI prompts](WORKFLOW.md), plus a [placeholder configuration](examples/config.template.toml).
 
 ## Setup
@@ -23,7 +23,7 @@ git -C PS2Recomp checkout 14b1e5cb39b4af7e6fc12f9a29fdc751efde49d7
 git -C PS2Recomp submodule update --init --recursive
 python -B apply.py --check
 python -B apply.py
-cmake -S PS2Recomp -B PS2Recomp/out/build -DPS2X_ENABLE_RUNTIME_LOGS=ON
+cmake -S PS2Recomp -B PS2Recomp/out/build -DPS2X_ENABLE_RUNTIME_LOGS=ON -DPS2X_ENABLE_DILIGENT_GS=ON -DPS2X_ENABLE_FFMPEG=ON
 cmake --build PS2Recomp/out/build --config RelWithDebInfo --target ps2_recomp ps2x_tests
 ```
 
@@ -43,9 +43,17 @@ Open **http://127.0.0.1:8765/**. The viewer displays existing capture files; it 
 
 ## Status and scope
 
-The Windows development workspace reaches menus and races, supports manual driving, and has exercised different vehicles/tracks and lap progression. It still has substantial slow motion and camera-dependent missing road/water; full race completion, complete audio behavior and prototype-content restoration remain unverified. Linux/macOS have not been validated. Windows automation is a development helper, not a player requirement.
+The Windows workspace reaches menus, manual races, laps and results. Direct development launch was checked with two car/track combinations. Busy scenes still slow down; complete audio, prototype restoration and Linux/macOS validation remain unfinished.
 
-This snapshot includes the GS lookup-table reduction from **2.75 MiB to 88 KiB**, without reducing texture quality. The corresponding local native suite passed **508 tests**. This is not a full-game compatibility or performance guarantee.
+The optional GPU backend uses pinned **DiligentCore** (downloaded by CMake), with shared Windows tests for D3D11, D3D12, Vulkan and OpenGL. Current game testing uses D3D11; shared shader tests do not establish playable support on every API. DirectX 10 is not implemented. FFmpeg development libraries handle supported movies: Windows CMake downloads the configured SDK unless `PS2X_FFMPEG_ROOT` supplies one; other hosts need the development packages listed in [WORKFLOW.md](WORKFLOW.md#dependencies-and-renderers).
+
+This snapshot retains the GS lookup-table reduction from **2.75 MiB to 88 KiB** without reducing texture quality, and includes GPU/transfer, native geometry and ordered submission improvements. The local configured suite passed **563/563 tests**. This is not a full-game performance guarantee.
+
+After building your matching retail runner, [direct launch](WORKFLOW.md#direct-development-race-launch) accepts a car and track without menu input:
+
+```sh
+python -B Scripts/rumble_dev.py launch --car Tiberius --track "True Grits" --720p --no-frame-capture
+```
 
 The patch contains both general runtime changes and build-scoped Rumble code; it is one integrated patch, not independently selectable features. See [PATCH-CONTENTS.md](PATCH-CONTENTS.md) for scope and validation limits.
 

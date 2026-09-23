@@ -14,6 +14,7 @@ No native bindings, third-party packages, or player dependencies.
 """
 import argparse
 import csv
+import configparser
 import ctypes
 from dataclasses import dataclass
 import hashlib
@@ -36,6 +37,19 @@ IDENTITIES = {
 }
 CACHE = ROOT / "analysis/research-state.json"
 REPORT = ROOT / "PS2Recomp/out/build/ps2xRuntime/inspector.json"
+
+
+def read_inspector_report():
+    """Read a fresh publication, allowing only its short replacement window."""
+    # Windows may briefly deny/open-miss the atomic file replacement. Never
+    # substitute a cached snapshot; callers must still check age and identity.
+    for attempt in range(6):
+        try:
+            return json.loads(REPORT.read_text(encoding="utf-8-sig"))
+        except (PermissionError, FileNotFoundError):
+            if attempt == 5:
+                raise
+            time.sleep(0.05)
 
 
 @dataclass
@@ -278,7 +292,7 @@ def changes(previous, current):
 
 
 def runtime_query(args):
-    report = json.loads(REPORT.read_text(encoding="utf-8-sig"))
+    report = read_inspector_report()
     if report.get("schema_version") != 1:
         raise ValueError("Unsupported inspector schema")
     sample = report.get("snapshot")
@@ -327,8 +341,34 @@ NAV_KEYS = {
 }
 
 
+def configure_navigation_profile(path):
+    """Use the same explicit PCSX2 keyboard profile supplied to the launcher."""
+    config = configparser.ConfigParser(interpolation=None)
+    with Path(path).open(encoding="utf-8-sig") as stream:
+        config.read_file(stream)
+    names = {"cross": "Cross", "circle": "Circle", "triangle": "Triangle", "square": "Square",
+             "start": "Start", "up": "Up", "down": "Down", "left": "Left", "right": "Right"}
+    codes = {chr(n): (n, False) for n in range(65, 91)}
+    codes.update({str(n): (48 + n, False) for n in range(10)})
+    codes.update({f"Numpad{n}": (0x60 + n, False) for n in range(10)})
+    codes.update({"Return": (13, False), "Space": (32, False), "Tab": (9, False),
+                  "Up": (0x26, True), "Down": (0x28, True), "Left": (0x25, True), "Right": (0x27, True)})
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    bindings = {}
+    for action, name in names.items():
+        source = config["Pad1"].get(name, "")
+        if not source.startswith("Keyboard/") or source[9:] not in codes:
+            raise ValueError("Navigation needs a supported keyboard binding for " + name)
+        vk, extended = codes[source[9:]]
+        scan = user.MapVirtualKeyW(vk, 0) & 255
+        if not scan:
+            raise ValueError("No scan code for " + name)
+        bindings[action] = (vk, scan, extended)
+    NAV_KEYS.update(bindings)  # Atomic validation before replacing any binding.
+
+
 def navigation_state():
-    report = json.loads(REPORT.read_text(encoding="utf-8-sig"))
+    report = read_inspector_report()
     sample = report.get("snapshot")
     if report.get("schema_version") != 1 or not sample or sample.get("error"):
         raise ValueError("No valid inspector sample")

@@ -7,6 +7,11 @@ try {
     if (@(Get-Process -Name ps2EntryRunner -ErrorAction SilentlyContinue).Count -gt 0) {
         throw 'Close the running PS2 runner before rebuilding.'
     }
+    # Regeneration must use the current translator, including shared memory-map
+    # fixes. Keep compiler and runner in the requested existing configuration.
+    $cmakeDriver = 'import os,subprocess,sys; e={k.upper():v for k,v in os.environ.items()}; e["MSBUILDDISABLENODEREUSE"]="1"; e["CL"]=e.get("CL","")+" /MP4"; f=open(sys.argv[1],"w"); r=subprocess.run(sys.argv[2:],env=e,stdout=f,stderr=subprocess.STDOUT); f.close(); sys.exit(r.returncode)'
+    py -3 -B -c $cmakeDriver .\PS2Recomp\out\build\ntsc-build.log cmake --build .\PS2Recomp\out\build --config $Configuration --target ps2_recomp -- /nodeReuse:false
+    if ($LASTEXITCODE -ne 0) { throw 'Recompiler build failed; see ntsc-build.log' }
     $retail = $Build -eq 'Retail'
     $elf = if ($retail) { 'Extracted_Assets/Rumble Racing (USA retail)/SLUS_201.74' } else { 'Extracted_Assets/Rumble Racing (Feb 7, 2001 prototype)/SLUS_201.74' }
     $expected = if ($retail) { 'E3C2C19B5FDEEAC9FB1F5A9B893346E7892E564796FA2F74FC40AE17A8ADE594' } else { '44E74A35DD123E3504F81EDED1DB68844E2E082EDAA908EA47A7EA1EC9A924A0' }
@@ -23,8 +28,6 @@ try {
     Set-Content -LiteralPath config-ghidra.toml -Value $config -Encoding utf8
     $outputRoot = (Resolve-Path -LiteralPath output-ghidra).Path
     if ($outputRoot -ne (Join-Path $workspace 'output-ghidra')) { throw 'Unexpected output path' }
-    $recompiler = Join-Path $workspace "PS2Recomp/out/build/ps2xRecomp/$Configuration/ps2_recomp.exe"
-    if (-not (Test-Path -LiteralPath $recompiler -PathType Leaf)) { throw "Build ps2_recomp for $Configuration before regenerating." }
     $oldFiles = @(Get-ChildItem -LiteralPath $outputRoot -File)
     $oldRuntimeFiles = @{}
     foreach ($item in $oldFiles) {
@@ -39,7 +42,7 @@ try {
     foreach ($item in $oldFiles) {
         Remove-Item -LiteralPath $item.FullName -Force
     }
-    & $recompiler .\config-ghidra.toml *> .\PS2Recomp\out\build\ntsc-recompile.log
+    & ".\PS2Recomp\out\build\ps2xRecomp\$Configuration\ps2_recomp.exe" .\config-ghidra.toml *> .\PS2Recomp\out\build\ntsc-recompile.log
     if ($LASTEXITCODE -ne 0) { throw 'Recompilation failed; see ntsc-recompile.log' }
     # Preserve unchanged timestamps so correcting one function does not rebuild
     # every generated translation unit. No alternate output tree or backup.
