@@ -1,4 +1,5 @@
 """State-checked retail menu navigation using normal input, not guest calls.
+Run these examples from the Rumble Racing folder.
 
     py -3 -B tools/rumble_navigate.py status
     py -3 -B tools/rumble_navigate.py wait track --timeout 60

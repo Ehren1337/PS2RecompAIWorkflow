@@ -2,6 +2,7 @@
 param([ValidateSet('Retail','February')][string]$Build = 'Retail', [ValidateSet('Debug','RelWithDebInfo')][string]$Configuration = 'Debug')
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent
+$runtimeSourceRoot = (Resolve-Path -LiteralPath (Join-Path $workspace '../PS2Recomp/ps2xRuntime')).Path
 Push-Location $workspace
 try {
     if (@(Get-Process -Name ps2EntryRunner -ErrorAction SilentlyContinue).Count -gt 0) {
@@ -10,7 +11,7 @@ try {
     # Regeneration must use the current translator, including shared memory-map
     # fixes. Keep compiler and runner in the requested existing configuration.
     $cmakeDriver = 'import os,subprocess,sys; e={k.upper():v for k,v in os.environ.items()}; e["MSBUILDDISABLENODEREUSE"]="1"; e["CL"]=e.get("CL","")+" /MP4"; f=open(sys.argv[1],"w"); r=subprocess.run(sys.argv[2:],env=e,stdout=f,stderr=subprocess.STDOUT); f.close(); sys.exit(r.returncode)'
-    py -3 -B -c $cmakeDriver .\PS2Recomp\out\build\ntsc-build.log cmake --build .\PS2Recomp\out\build --config $Configuration --target ps2_recomp -- /nodeReuse:false
+    py -3 -B -c $cmakeDriver ..\PS2Recomp\out\build\ntsc-build.log cmake --build ..\PS2Recomp\out\build --config $Configuration --target ps2_recomp -- /nodeReuse:false
     if ($LASTEXITCODE -ne 0) { throw 'Recompiler build failed; see ntsc-build.log' }
     $retail = $Build -eq 'Retail'
     $elf = if ($retail) { 'Extracted_Assets/Rumble Racing (USA retail)/SLUS_201.74' } else { 'Extracted_Assets/Rumble Racing (Feb 7, 2001 prototype)/SLUS_201.74' }
@@ -32,8 +33,9 @@ try {
     $oldRuntimeFiles = @{}
     foreach ($item in $oldFiles) {
         if ($item.Extension -notin @('.cpp','.h')) { throw "Unexpected generated file: $($item.Name)" }
-        $folder = if ($item.Extension -eq '.h') { 'PS2Recomp/ps2xRuntime/include' } else { 'PS2Recomp/ps2xRuntime/src/runner' }
-        $target = Join-Path $workspace (Join-Path $folder $item.Name)
+        $folder = if ($item.Extension -eq '.h') { '../PS2Recomp/ps2xRuntime/include' } else { '../PS2Recomp/ps2xRuntime/src/runner' }
+        $target = [IO.Path]::GetFullPath((Join-Path $workspace (Join-Path $folder $item.Name)))
+        if (-not $target.StartsWith($runtimeSourceRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Generated target escaped runtime source directory' }
         if ((Test-Path -LiteralPath $target) -and (Get-FileHash -LiteralPath $target).Hash -ne (Get-FileHash -LiteralPath $item.FullName).Hash) {
             throw "Preserving independently edited runtime file: $target"
         }
@@ -42,15 +44,16 @@ try {
     foreach ($item in $oldFiles) {
         Remove-Item -LiteralPath $item.FullName -Force
     }
-    & ".\PS2Recomp\out\build\ps2xRecomp\$Configuration\ps2_recomp.exe" .\config-ghidra.toml *> .\PS2Recomp\out\build\ntsc-recompile.log
+    & "..\PS2Recomp\out\build\ps2xRecomp\$Configuration\ps2_recomp.exe" .\config-ghidra.toml *> ..\PS2Recomp\out\build\ntsc-recompile.log
     if ($LASTEXITCODE -ne 0) { throw 'Recompilation failed; see ntsc-recompile.log' }
     # Preserve unchanged timestamps so correcting one function does not rebuild
     # every generated translation unit. No alternate output tree or backup.
     $currentRuntimeFiles = @{}
     foreach ($item in @(Get-ChildItem -LiteralPath $outputRoot -File)) {
         if ($item.Extension -notin @('.cpp','.h')) { throw "Unexpected generated file: $($item.Name)" }
-        $folder = if ($item.Extension -eq '.h') { 'PS2Recomp/ps2xRuntime/include' } else { 'PS2Recomp/ps2xRuntime/src/runner' }
-        $target = Join-Path $workspace (Join-Path $folder $item.Name)
+        $folder = if ($item.Extension -eq '.h') { '../PS2Recomp/ps2xRuntime/include' } else { '../PS2Recomp/ps2xRuntime/src/runner' }
+        $target = [IO.Path]::GetFullPath((Join-Path $workspace (Join-Path $folder $item.Name)))
+        if (-not $target.StartsWith($runtimeSourceRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Generated target escaped runtime source directory' }
         $currentRuntimeFiles[$target] = $true
         $newHash = (Get-FileHash -LiteralPath $item.FullName).Hash
         if (-not (Test-Path -LiteralPath $target) -or (Get-FileHash -LiteralPath $target).Hash -ne $newHash) {
@@ -67,9 +70,9 @@ try {
     }
     # Normalize PATH/Path for MSBuild and avoid persistent compiler nodes.
     $cmakeDriver = 'import os,subprocess,sys; e={k.upper():v for k,v in os.environ.items()}; e["MSBUILDDISABLENODEREUSE"]="1"; e["CL"]=e.get("CL","")+" /MP4"; f=open(sys.argv[1],"w"); r=subprocess.run(sys.argv[2:],env=e,stdout=f,stderr=subprocess.STDOUT); f.close(); sys.exit(r.returncode)'
-    py -3 -B -c $cmakeDriver .\PS2Recomp\out\build\ntsc-configure.log cmake -S .\PS2Recomp -B .\PS2Recomp\out\build -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DPS2X_ENABLE_RUNTIME_LOGS=ON
+    py -3 -B -c $cmakeDriver ..\PS2Recomp\out\build\ntsc-configure.log cmake -S ..\PS2Recomp -B ..\PS2Recomp\out\build -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DPS2X_ENABLE_RUNTIME_LOGS=ON
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed; see ntsc-configure.log' }
-    py -3 -B -c $cmakeDriver .\PS2Recomp\out\build\ntsc-build.log cmake --build .\PS2Recomp\out\build --config $Configuration --target ps2EntryRunner -- /nodeReuse:false
+    py -3 -B -c $cmakeDriver ..\PS2Recomp\out\build\ntsc-build.log cmake --build ..\PS2Recomp\out\build --config $Configuration --target ps2EntryRunner -- /nodeReuse:false
     if ($LASTEXITCODE -ne 0) { throw 'Build failed; see ntsc-build.log' }
     Write-Output "$Build $Configuration regeneration and build completed successfully."
 } finally { Pop-Location }

@@ -1,4 +1,5 @@
 """Bounded numeric timing trace for this retail runner; no input or image capture.
+Run these examples from the Rumble Racing folder.
 
     py -3 -B tools/rumble_profile.py --trigger race-start
     py -3 -B tools/rumble_profile.py --trigger now --seconds 15
@@ -378,12 +379,12 @@ k.CloseHandle.argtypes=[c.c_void_p]
 k.ReadProcessMemory.argtypes=[c.c_void_p,c.c_void_p,c.c_void_p,c.c_size_t,c.c_void_p]
 d.SymInitializeW.argtypes=[c.c_void_p,c.c_wchar_p,c.c_int];d.SymInitializeW.restype=c.c_int
 d.SymSetOptions.argtypes=[c.c_uint];d.SymFromName.argtypes=[c.c_void_p,c.c_char_p,c.c_void_p];d.SymCleanup.argtypes=[c.c_void_p]
-pid=json.loads(pathlib.Path('PS2Recomp/out/build/ps2xRuntime/inspector.json').read_text(encoding='utf-8-sig'))['process_id']
+pid=json.loads(pathlib.Path('../PS2Recomp/out/build/ps2xRuntime/inspector.json').read_text(encoding='utf-8-sig'))['process_id']
 p=k.OpenProcess(0x410,False,pid)
 if not p:raise c.WinError(c.get_last_error())
 try:
  d.SymSetOptions(0x2|0x4|0x10|0x200|0x80000)
- if not d.SymInitializeW(p,str(pathlib.Path('PS2Recomp/out/build/ps2xRuntime/RelWithDebInfo').resolve()),True):raise c.WinError(c.get_last_error())
+ if not d.SymInitializeW(p,str(pathlib.Path('../PS2Recomp/out/build/ps2xRuntime/RelWithDebInfo').resolve()),True):raise c.WinError(c.get_last_error())
  def symbol(name):
   b=c.create_string_buffer(88+2048);struct.pack_into('<I',b,0,88);struct.pack_into('<I',b,80,2048)
   if not d.SymFromName(p,name.encode(),b):raise RuntimeError(name+' '+str(c.get_last_error()))
@@ -425,7 +426,7 @@ try:
  size=struct.unpack('<I',read(gs+field('GS','m_localMemorySize'),4))[0]
  if size!=4*1024*1024:raise RuntimeError('invalid VRAM size')
 
- expected=ROOT/'PS2Recomp/out/build/ps2xRuntime/RelWithDebInfo/ps2EntryRunner.exe'
+ expected=ROOT.parent / 'PS2Recomp/out/build/ps2xRuntime/RelWithDebInfo/ps2EntryRunner.exe'
  k.QueryFullProcessImageNameW.argtypes=[c.c_void_p,c.c_uint,c.c_wchar_p,c.POINTER(c.c_uint)]
  pathbuf=c.create_unicode_buffer(32768);pathlen=c.c_uint(len(pathbuf))
  if not k.QueryFullProcessImageNameW(p,0,pathbuf,c.byref(pathlen)):

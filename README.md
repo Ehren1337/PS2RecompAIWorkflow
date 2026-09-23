@@ -11,6 +11,14 @@ Source patches and development tools from an ongoing Rumble Racing reversing pro
 - **Rumble-specific work:** build-guarded symbol/function repairs, state-checked menu automation, direct car/track launch, saved benchmark poses, optional developer driving/upgrades, validated native VU paths, native Video Options, asset-format readers, and handwritten picture/audio compatibility code. These are not settings for other games.
 - **Boilerplates:** [workflow, commands and AI prompts](WORKFLOW.md), plus a [placeholder configuration](examples/config.template.toml).
 
+## Folder layout
+
+- **`tools/`, `examples/`, `patches/`:** shared tools, boilerplates and runtime patch.
+- **[Rumble Racing/](<Rumble Racing/README.md>):** Rumble-only launch/rebuild, Python research and Ghidra helpers. Other games do not use these as-is.
+- **`PS2Recomp/`:** your local patched source and existing build; created during setup.
+
+The source patch still contains integrated Rumble adapters. This folder split organizes the workflow; it does not turn game-specific code into universal support.
+
 ## Start another PS2 game
 
 Use a **separate project folder** and follow [the new-game walkthrough and copyable AI prompt](WORKFLOW.md#start-another-ps2-game). Apply this toolkit, analyze your own game in Ghidra, generate its C++, then use the inspector and Python experiments to investigate startup and gameplay.
@@ -60,7 +68,7 @@ This snapshot retains the GS lookup-table reduction from **2.75 MiB to 88 KiB** 
 After building your matching retail runner, [direct launch](WORKFLOW.md#direct-development-race-launch) accepts a car and track without menu input:
 
 ```sh
-python -B Scripts/rumble_dev.py launch --car Tiberius --track "True Grits" --720p --no-frame-capture
+python -B "Rumble Racing/Scripts/rumble_dev.py" launch --car Tiberius --track "True Grits" --720p --no-frame-capture
 ```
 
 The patch contains both general runtime changes and build-scoped Rumble code; it is one integrated patch, not independently selectable features. See [PATCH-CONTENTS.md](PATCH-CONTENTS.md) for scope and validation limits.

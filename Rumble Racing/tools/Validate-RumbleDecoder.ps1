@@ -3,7 +3,7 @@
 param([Parameter(Mandatory=$true)][string]$VcVarsPath)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent
-$build = Join-Path $workspace 'PS2Recomp/out/build'
+$build = Join-Path (Split-Path $workspace -Parent) 'PS2Recomp/out/build'
 $generated = Get-Content (Join-Path $workspace 'output-ghidra/Stream_DecompressChunk_0x127690.cpp') -Raw
 $generated = $generated.Substring($generated.IndexOf('// Function:'))
 $prefix = @'

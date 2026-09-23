@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-    throw 'No inspector report yet. Launch with .\run-ntsc.ps1 and wait a few seconds.'
+    throw 'No inspector report yet. Enable PS2_INSPECTOR_FILE in your game launcher and wait for a fresh report.'
 }
 # Allow the writer to replace the file while this reader holds the old version.
 $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
@@ -28,7 +28,7 @@ if ($Json) { Write-Output $raw; return }
 if ($null -eq $sample) { Write-Output 'Inspector is waiting for the first EE dispatcher sample.'; return }
 if ($sample.error) { throw "Inspector capture failed: $($sample.error)" }
 
-$workspace = Split-Path $PSScriptRoot -Parent
+$workspace = Join-Path (Split-Path $PSScriptRoot -Parent) 'Rumble Racing'
 $map = $null
 $discRoot = [IO.Path]::GetFullPath($sample.disc.root).TrimEnd('\','/')
 if ($discRoot -eq (Join-Path $workspace 'Extracted_Assets/Rumble Racing (Feb 7, 2001 prototype)')) { $map = Join-Path $workspace 'CSV Map/map-ntsc.csv' }

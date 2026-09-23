@@ -1,4 +1,5 @@
 """Rumble Racing menu/function research. Read-only; no input or guest calls.
+Run these examples from the Rumble Racing folder.
 
 py -3 -B tools/rumble_menu_research.py label Continue
 py -3 -B tools/rumble_menu_research.py function FE_HandleET_CarSelect --build February

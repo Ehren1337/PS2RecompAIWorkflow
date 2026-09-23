@@ -25,11 +25,14 @@ These are development changes, not completed PS2 subsystem implementations or au
 - `rumble_dev.cpp` provides opt-in original No Mercy NPC player driving and Single Race upgrade overrides, retaining manual play. It also provides direct car/track race preparation and a once-per-countdown saved-pose recovery. Intentional glitch presentation is separately opt-in.
 - `rumble_vu_native.cpp` implements handwritten exact-build geometry specializations with bounded interpreter comparisons and explicit guards; it is not a universal VU replacement.
 - Windows/PDB numeric profiling and WPR/xperf CPU/wait/GPU analysis helpers retain bounded counters and reuse private output paths.
-- Hash-guarded Ghidra function repair/import scripts, Python model/audio/menu/camera research, state-checked input routes and developer controls in `Scripts/rumble_dev.py`.
+- Hash-guarded Ghidra function repair/import scripts, Python model/audio/menu/camera research, state-checked input routes and developer controls in `Rumble Racing/Scripts/rumble_dev.py`.
 
 Addresses, hashes, protocol constants and identified names are analysis metadata. No game executable, complete symbol database, original source or decompiled/generated game bodies are distributed. Prototype candidates remain an audit, not playable extra entries; debug/content restoration and Lua integration remain unfinished.
 
 ## Distribution adjustments
+
+Rumble helper source is grouped under `Rumble Racing/`; generic inspector/viewer/Ghidra launch tools remain in `tools/`. Helpers resolve the shared source/build through the parent folder. Private inputs/reports beneath the game folder are ignored. The C++ patch is unchanged by this layout update; no game data or private guides were added.
+
 
 The publishing copy retains `GHIDRA_HOME`, `-DiscRoot`, `-VcVarsPath`, generic viewer title and `--runtime-dir`; Python examples use `py -3`. The launcher explicitly disables images when requested and hides its redirected console. The rebuild helper selects the matching recompiler configuration. README and WORKFLOW use relative paths/placeholders; personal guides, private reports and original workspace settings are excluded.
 

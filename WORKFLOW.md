@@ -2,6 +2,12 @@
 
 This is the portable companion to our personal workspace guide. It includes the actual tools through this repository and its patch; it does not embed game data or assume our private files exist. Run commands from this repository's root. Windows examples use PowerShell and `py -3 -B`; other hosts can use `python3 -B` for portable Python tools.
 
+## Folder layout
+
+Shared setup, `patches/`, `examples/` and generic `tools/` remain at the repository root. Rumble launch/rebuild, Python research and game-specific Ghidra helpers are under [Rumble Racing/](<Rumble Racing/README.md>). Commands below run from the repository root; quote paths containing spaces.
+
+For another game, use the shared setup and its own analysis/generated code. The Rumble launcher and rebuild helper are not generic game selectors. The C++ patch remains integrated: game adapters still compile inside PS2Recomp, and the existing build stays in `PS2Recomp/out/build`.
+
 ## Understand the layers
 
 | Layer | What belongs here |
@@ -66,7 +72,7 @@ Think of this repository as the starting toolbox. Each new game still needs its 
    Continue the [README setup](README.md#setup) from the inner `git clone ... PS2Recomp` step; do not clone this workflow repository again. Keep the nested source directory named `PS2Recomp` so the generic examples resolve correctly.
 2. **Identify your game.** Supply your own disc dump and extract its boot executable and assets into an ignored folder such as `private/YOUR_GAME/`. Record title, region, revision and executable/module hashes. Do not rename another game's executable to match Rumble or disable identity guards.
 3. **Analyze and generate.** Follow [Analyze and generate your own game](#analyze-and-generate-your-own-game): Ghidra analysis, function-map/TOML export, C++ generation and the first runner build. The placeholder TOML is an example, not a finished game configuration. Keep generated game code private.
-4. **Connect runtime evidence.** Follow [AI access to runtime evidence](#give-an-ai-access-to-runtime-evidence) and the generic [inspector launch example](#inspector-frames-and-viewer), using your executable/report paths. For a new game, do not launch through `run-ntsc.ps1` or `Scripts/rumble_dev.py`; those select known Rumble builds. A visible window or successful compilation alone is not proof of working gameplay.
+4. **Connect runtime evidence.** Follow [AI access to runtime evidence](#give-an-ai-access-to-runtime-evidence) and the generic [inspector launch example](#inspector-frames-and-viewer), using your executable/report paths. For a new game, do not launch through `Rumble Racing/run-ntsc.ps1` or `Rumble Racing/Scripts/rumble_dev.py`; those select known Rumble builds. A visible window or successful compilation alone is not proof of working gameplay.
 5. **Investigate one blocker at a time.** Start with startup/module loading, then the first screen, input, asset reads, graphics/audio, gameplay and transitions. Verify the first unmet condition using fresh runtime data and source analysis. Use [Python tools and experiments](#python-tools-for-faster-investigation) where useful; create a separately named helper for the new game and adapt assumptions deliberately.
 6. **Validate and record progress.** Test fixes in compiled C++ and the live game. Keep ordinary behavior and development shortcuts separate. Record what works, what is unverified, the next blocker and how to reproduce it. Reuse one build tree and bounded reports; do not accumulate backups or image dumps.
 
@@ -96,7 +102,7 @@ First useful milestone: a matching executable launches, the inspector identifies
 1. Complete README setup. Keep one `PS2Recomp/out/build` directory and reuse it.
 2. Put your own executable and extracted assets under an ignored local directory such as `private/YOUR_GAME/`. Record region, revision, executable hash and module hashes. A shared SLUS/SLES filename does not prove identical code.
 3. Import the ELF into Ghidra with a suitable PS2/R5900 processor definition. Ghidra extensions, their installation and compatibility are separate prerequisites. Confirm the language, entry point and function boundaries before export. See the pinned checkout's `ps2xAnalyzer/Readme.md`.
-4. Add `PS2Recomp/ps2xRecomp/tools/ghidra` to Ghidra's script directories. Run `ExportPS2Functions.java` and save its TOML and CSV under your private game directory. The scripts in `tools/ghidra` add our research workflow; the Rumble imports are not generic imports.
+4. Add `PS2Recomp/ps2xRecomp/tools/ghidra` to Ghidra's script directories. Run `ExportPS2Functions.java` and save its TOML and CSV under your private game directory. `tools/ghidra` contains the shared analysis preset. Rumble-specific imports/exports live in `Rumble Racing/tools/ghidra`; they are not generic imports.
 5. Start from that exported TOML. Set `general.input`, `general.output` and `general.ghidra_output` relative to the working directory. [config.template.toml](examples/config.template.toml) illustrates the fields only. Preserve verified exporter classifications; fewer stubs alone is neither good nor bad.
 6. Recompile, place the generated headers and `.cpp` files in the runtime's include/runner directories, reconfigure, then build the runner. Keep generated code local. The first-time example below assumes a fresh checkout with no generated game code or handwritten edits to those destination files.
 
@@ -142,13 +148,13 @@ The tools below are included as separate source files in this repository; the Ma
 
 | Tool | Start here when | Scope |
 | --- | --- | --- |
-| `tools/rumble_research.py` | Inspect functions, game formats, runtime state, movie/audio/model data | Exact-build research; some commands need private exports or FFmpeg command-line tools. |
-| `tools/rumble_menu_research.py` | Find labels/callers and car/track identities | Read-only metadata investigation; labels alone are not callable actions. |
-| `tools/rumble_vu_research.py` | Test VU arithmetic/packet hypotheses before native code | Python models and comparisons against owned input; not a general VU compiler. |
-| `tools/rumble_profile.py` | Catch slowdown windows and correlate clocks, counters, objects and stacks | Windows/PDB diagnostics; optional stack sampling adds measured overhead. |
-| `tools/rumble_etw.py` | Separate busy CPU work from waits/graphics completion | Optional Windows WPR/xperf collection and reanalysis; see profiling section. |
-| `Scripts/rumble_dev.py` | Launch a chosen car/track, save a benchmark pose or enable dev driving/upgrades | Validated retail-specific commands backed by C++ hooks; another game needs its own adapter. |
-| `tools/rumble_navigate.py` | Observe race/menu state or exercise actual menus and controls | Verified states and bounded input routes; prefer direct launch for repeated scene setup. |
+| `Rumble Racing/tools/rumble_research.py` | Inspect functions, game formats, runtime state, movie/audio/model data | Exact-build research; some commands need private exports or FFmpeg command-line tools. |
+| `Rumble Racing/tools/rumble_menu_research.py` | Find labels/callers and car/track identities | Read-only metadata investigation; labels alone are not callable actions. |
+| `Rumble Racing/tools/rumble_vu_research.py` | Test VU arithmetic/packet hypotheses before native code | Python models and comparisons against owned input; not a general VU compiler. |
+| `Rumble Racing/tools/rumble_profile.py` | Catch slowdown windows and correlate clocks, counters, objects and stacks | Windows/PDB diagnostics; optional stack sampling adds measured overhead. |
+| `Rumble Racing/tools/rumble_etw.py` | Separate busy CPU work from waits/graphics completion | Optional Windows WPR/xperf collection and reanalysis; see profiling section. |
+| `Rumble Racing/Scripts/rumble_dev.py` | Launch a chosen car/track, save a benchmark pose or enable dev driving/upgrades | Validated retail-specific commands backed by C++ hooks; another game needs its own adapter. |
+| `Rumble Racing/tools/rumble_navigate.py` | Observe race/menu state or exercise actual menus and controls | Verified states and bounded input routes; prefer direct launch for repeated scene setup. |
 | `tools/runtime_viewer.py` | Watch existing captured frames through restarts | Generic viewing; no AI connection, input or automatic restart. |
 
 Use `--help` on command-line helpers before choosing actions. Python is useful for quick decoding, comparisons, hypotheses and measuring experiments. Once runtime behavior is understood, implement performance-sensitive logic in C++ and validate that compiled implementation against reference data/tests and the live game. Python success alone does not establish C++ thread safety, buffer lifetime, guest timing or GPU correctness. Keep useful analysis in Python; do not rewrite it into C++ without a reason. Prefer one hypothesis and discriminating check over unbounded trial-and-error.
@@ -195,24 +201,24 @@ These helpers expect the following private inputs relative to this repository:
 
 | Input | Expected location |
 | --- | --- |
-| Retail executable/assets | `Extracted_Assets/Rumble Racing (USA retail)/SLUS_201.74` and sibling assets |
-| February executable/assets | `Extracted_Assets/Rumble Racing (Feb 7, 2001 prototype)/SLUS_201.74` and sibling assets |
-| March comparison assets | `Extracted_Assets/Rumble Racing (Mar 27, 2001 prototype)/` |
-| Retail exports | `CSV Map/retail/config.toml` and `CSV Map/retail/map.csv` |
-| February exports | `CSV Map/config-ntsc.toml` and `CSV Map/map-ntsc.csv` |
-| Generated runtime code | `output-ghidra/` |
-| Private research outputs | `analysis/` |
+| Retail executable/assets | `Rumble Racing/Extracted_Assets/Rumble Racing (USA retail)/SLUS_201.74` and sibling assets |
+| February executable/assets | `Rumble Racing/Extracted_Assets/Rumble Racing (Feb 7, 2001 prototype)/SLUS_201.74` and sibling assets |
+| March comparison assets | `Rumble Racing/Extracted_Assets/Rumble Racing (Mar 27, 2001 prototype)/` |
+| Retail exports | `Rumble Racing/CSV Map/retail/config.toml` and `Rumble Racing/CSV Map/retail/map.csv` |
+| February exports | `Rumble Racing/CSV Map/config-ntsc.toml` and `Rumble Racing/CSV Map/map-ntsc.csv` |
+| Generated runtime code | `Rumble Racing/output-ghidra/` |
+| Private research outputs | `Rumble Racing/analysis/` |
 
 Create the output directories before the first export/rebuild. Supply your own inputs; none are distributed here. Research subcommands can require additional locally produced reports. Keep the identity guards: retail and prototype addresses must not be interchanged.
 
 ```powershell
 # After your own Ghidra exports exist and the runner is stopped:
-New-Item -ItemType Directory -Force output-ghidra, analysis | Out-Null
-.\tools\Rebuild-Game.ps1 -Build Retail -Configuration RelWithDebInfo
-py -3 -B Scripts/rumble_dev.py launch --720p --no-frame-capture --no-ai --no-max-upgrades
-py -3 -B tools/rumble_navigate.py status
-py -3 -B tools/rumble_navigate.py route vehicle
-py -3 -B tools/rumble_navigate.py wait track --timeout 60
+New-Item -ItemType Directory -Force 'Rumble Racing/output-ghidra', 'Rumble Racing/analysis' | Out-Null
+& '.\Rumble Racing\tools\Rebuild-Game.ps1' -Build Retail -Configuration RelWithDebInfo
+py -3 -B "Rumble Racing/Scripts/rumble_dev.py" launch --720p --no-frame-capture --no-ai --no-max-upgrades
+py -3 -B "Rumble Racing/tools/rumble_navigate.py" status
+py -3 -B "Rumble Racing/tools/rumble_navigate.py" route vehicle
+py -3 -B "Rumble Racing/tools/rumble_navigate.py" wait track --timeout 60
 ```
 
 `route` sends normal input through verified states; `wait` only waits. It checks readiness, transition state, PID and freshness, and stops on unsupported/unknown conditions. It does not directly call menu functions, patch game state, or automatically restart. Menu routing and the separate bounded driving/lap experiments are distinct; reaching a menu does not verify gameplay or race completion. Movie skipping uses normal input after recognizing playback. Confirm ordinary behavior before automating a route.
@@ -236,18 +242,18 @@ $env:PS2_RUMBLE_VU_COMPARE='1'
 foreach ($suffix in 'CLIP','REFLECT','LIT','REFLECT_LIT','DUAL_BASIS','QUAD') {
     Set-Item -Path "Env:PS2_RUMBLE_NATIVE_VU_$suffix" -Value '1'
 }
-py -3 -B Scripts/rumble_dev.py launch --car Tiberius --track "True Grits" --720p --no-frame-capture --no-ai
+py -3 -B "Rumble Racing/Scripts/rumble_dev.py" launch --car Tiberius --track "True Grits" --720p --no-frame-capture --no-ai
 ```
 
 Both arguments are required; names or catalog IDs work. Preset: one player, eight cars, three laps, Forgiving, power-ups active. `--car-class rookie|pro|elite`, `--max-upgrades` and `--ai` are separate choices. The adapter retains initialization/card polling/cleanup, skips intro presentation, invokes original race preparation and uses original loading. Ordinary launches retain menus. It does not change game files or saved unlock records. Another game requires its own verified interfaces.
 
-Park first and run `py -3 -B Scripts/rumble_dev.py save-spot` to overwrite one ignored local `Scripts/rumble-benchmark-spot.json`; no pose is shipped. Add `--benchmark-spot` to the next launch for that same track. Three game seconds after GO, original recovery restores the pose once; restart rearms it. This is not a full save state: NPC/world state and lap progress are not restored, and recovery clears motion, active power-ups and skid history. AI plus teleport has not been live-validated. It is not deterministic whole-scene replay.
+Park first and run `py -3 -B "Rumble Racing/Scripts/rumble_dev.py" save-spot` to overwrite one ignored local `Rumble Racing/Scripts/rumble-benchmark-spot.json`; no pose is shipped. Add `--benchmark-spot` to the next launch for that same track. Three game seconds after GO, original recovery restores the pose once; restart rearms it. This is not a full save state: NPC/world state and lap progress are not restored, and recovery clears motion, active power-ups and skid history. AI plus teleport has not been live-validated. It is not deterministic whole-scene replay.
 
 ## Numeric slowdown profiling
 
-`tools/rumble_profile.py` uses Windows/PDB counters. Enable `PS2_VU_PROFILE=1` before launch, then use `--trigger slowdown --pre 3 --seconds 15` or `--trigger now`. It overwrites `analysis/rumble-timing.json`. `--objects` requires `PS2_RUMBLE_OBJECT_PROFILE=1` and records bounded instance/model/producer attribution, not exact per-object GPU cost. `--stacks --stack-lines` adds measured thread suspensions; keep them off unless needed.
+`Rumble Racing/tools/rumble_profile.py` uses Windows/PDB counters. Enable `PS2_VU_PROFILE=1` before launch, then use `--trigger slowdown --pre 3 --seconds 15` or `--trigger now`. It overwrites `Rumble Racing/analysis/rumble-timing.json`. `--objects` requires `PS2_RUMBLE_OBJECT_PROFILE=1` and records bounded instance/model/producer attribution, not exact per-object GPU cost. `--stacks --stack-lines` adds measured thread suspensions; keep them off unless needed.
 
-`tools/rumble_etw.py` needs Windows Performance Toolkit WPR/xperf and administrator rights for collection. It performs a bounded farm driving experiment and overwrites `analysis/rumble-cpu.etl` and `analysis/rumble-etw.json`; do not use it concurrently with manual driving. `--gpu` adds graphics events. Short combined traces can be several GB; reanalyze before collecting more. Queue completion latency is not exact shader execution time. No captures, PDBs or reports are distributed.
+`Rumble Racing/tools/rumble_etw.py` needs Windows Performance Toolkit WPR/xperf and administrator rights for collection. It performs a bounded farm driving experiment and overwrites `Rumble Racing/analysis/rumble-cpu.etl` and `Rumble Racing/analysis/rumble-etw.json`; do not use it concurrently with manual driving. `--gpu` adds graphics events. Short combined traces can be several GB; reanalyze before collecting more. Queue completion latency is not exact shader execution time. No captures, PDBs or reports are distributed.
 
 Record PID/build, game-clock delta versus monotonic time, pose/track/car, settings and measurement overhead. Host FPS differs from simulation speed. Inspector logs can show completion before buffered stdout. Farm slowdown still involves CPU geometry/submission and graphics transfer/completion dependencies; no single object explains every slowdown.
 
@@ -257,13 +263,13 @@ Set `GHIDRA_HOME` to your installation; the wrapper uses that distribution's lau
 
 ```powershell
 $env:GHIDRA_HOME = '<GHIDRA_INSTALLATION>'
-New-Item -ItemType Directory -Force 'CSV Map/retail' | Out-Null
+New-Item -ItemType Directory -Force 'Rumble Racing/CSV Map/retail' | Out-Null
 .\tools\Invoke-Ghidra.ps1 -HeadlessArguments @(
-    'Ghidra Project', '<PROJECT_NAME>', '-process', 'SLUS_201.74', '-noanalysis',
-    '-scriptPath', 'tools/ghidra;PS2Recomp/ps2xRecomp/tools/ghidra',
+    'Rumble Racing/Ghidra Project', '<PROJECT_NAME>', '-process', 'SLUS_201.74', '-noanalysis',
+    '-scriptPath', 'Rumble Racing/tools/ghidra;tools/ghidra;PS2Recomp/ps2xRecomp/tools/ghidra',
     '-postScript', 'ImportRumbleRetail.java',
     '-postScript', 'ExportPS2Functions.java',
-    'CSV Map/retail/config.toml', 'CSV Map/retail/map.csv'
+    'Rumble Racing/CSV Map/retail/config.toml', 'Rumble Racing/CSV Map/retail/map.csv'
 )
 ```
 
@@ -278,7 +284,7 @@ Use the project/program name you actually imported. This command edits its Ghidr
 | `ExportRumbleAudio.java` | Verified February/retail IOP audio analysis; argument is a private output C path. |
 | `ExportRumbleAssets.java` | Selected resource/debug function analysis; argument is a private output C path. |
 
-Exporters can produce decompiled game code locally. Those products belong in ignored `analysis/`, never in this public repository. Original linker maps and full exported symbol databases are not included.
+Exporters can produce decompiled game code locally. Those products belong in ignored `Rumble Racing/analysis/`, never in this public repository. Original linker maps and full exported symbol databases are not included.
 
 ## Other research tools
 
@@ -332,11 +338,11 @@ These are exact-build Rumble examples, not generic PS2 launch arguments. After b
 
 ```powershell
 # Manual play, native 720p-sized window, no automatic images or upgrade changes:
-py -3 -B Scripts/rumble_dev.py launch --720p --no-frame-capture --no-ai --no-max-upgrades
+py -3 -B "Rumble Racing/Scripts/rumble_dev.py" launch --720p --no-frame-capture --no-ai --no-max-upgrades
 # Optional keyboard-only import; the source PCSX2 profile is read, never modified:
-py -3 -B Scripts/rumble_dev.py launch --720p --keyboard-profile '<PROFILE>/Keyboard.ini'
+py -3 -B "Rumble Racing/Scripts/rumble_dev.py" launch --720p --keyboard-profile '<PROFILE>/Keyboard.ini'
 # Optional original No Mercy NPC logic for the player, with player-only Elite upgrades:
-py -3 -B Scripts/rumble_dev.py launch --720p --ai --max-upgrades
+py -3 -B "Rumble Racing/Scripts/rumble_dev.py" launch --720p --ai --max-upgrades
 ```
 
 Choose one launch command; the helper refuses a second runner and does not stop an existing one. Defaults are manual driving and no upgrade override. `--window` shows a native window at its default size; without `--window` or `--720p` the helper uses viewer-only mode. `--no-frame-capture` disables images, not text inspection. `--glitch-visuals` is an intentional presentation effect, not a fix for texture corruption.
@@ -345,7 +351,7 @@ Developer upgrades apply at the next Single Race setup (Elite player, Rookie opp
 
 The retail **Video Options** entry controls host window size, 4:3 presentation and Sharp/Smooth filtering. It does not raise internal rendering resolution. Its settings currently reset at launch. This UI is a build-scoped adapter calling the game's own menu/font routines; another game needs its own integration.
 
-`prototype-candidates` audits local model and handling data using `analysis/assets-investigation.json`; it does not install extra vehicles. Prototype appearance/handling with retail audio is a restoration objective, not implemented content. There is no Lua runtime; `Scripts/` is a development-helper location.
+`prototype-candidates` audits local model and handling data using `Rumble Racing/analysis/assets-investigation.json`; it does not install extra vehicles. Prototype appearance/handling with retail audio is a restoration objective, not implemented content. There is no Lua runtime; `Scripts/` is a development-helper location.
 
 `rumble_navigate.py race-status`, `camera-status` and `debug-status` inspect verified state. `wait-results` has a bounded timeout and checks original results readiness; it cannot make an unfinished race pass. `drive`/`lap` are opt-in Windows input experiments and depend on the current track, validated RAM state and expected keyboard bindings. Recheck bindings after importing another keyboard profile.
 

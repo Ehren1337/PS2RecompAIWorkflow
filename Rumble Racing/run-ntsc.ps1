@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 if ($DevAI -and $Build -ne 'Retail') { throw 'Dev AI is verified only for the USA retail build.' }
 if ($DevMaxUpgrades -and $Build -ne 'Retail') { throw 'Dev upgrades are verified only for the USA retail build.' }
 if ($DevGlitchVisuals -and $Build -ne 'Retail') { throw 'This development launcher enables glitch visuals only for retail.' }
-$runtimeDirectory = Join-Path $PSScriptRoot 'PS2Recomp/out/build/ps2xRuntime'
+$runtimeDirectory = Join-Path (Split-Path $PSScriptRoot -Parent) 'PS2Recomp/out/build/ps2xRuntime'
 $executable = Join-Path $runtimeDirectory (Join-Path $Configuration 'ps2EntryRunner.exe')
 $relativeElf = if ($Build -eq 'Retail') { 'Extracted_Assets/Rumble Racing (USA retail)/SLUS_201.74' } else { 'Extracted_Assets/Rumble Racing (Feb 7, 2001 prototype)/SLUS_201.74' }
 $gameElf = Join-Path $PSScriptRoot $relativeElf
@@ -71,4 +71,4 @@ $process = Start-Process -FilePath $executable -ArgumentList ('"' + $gameElf + '
     $env:PS2_GS_DEPTH_PREFETCH = $previousDepthPrefetch
 }
 Write-Output "Started NTSC $Build $Configuration runner (PID $($process.Id)). Logs: $runtimeDirectory"
-if (-not $NoInspector) { Write-Output 'Inspector enabled. Read it with .\tools\Inspect-Runtime.ps1' }
+if (-not $NoInspector) { Write-Output 'Inspector enabled. Read it with ..\tools\Inspect-Runtime.ps1' }

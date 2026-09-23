@@ -1,4 +1,5 @@
 """Inspect the verified retail VU1 upload without exporting game code.
+Run these examples from the Rumble Racing folder.
 
 py -3 -B tools/rumble_vu_research.py
 

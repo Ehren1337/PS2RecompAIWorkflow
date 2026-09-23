@@ -1,4 +1,5 @@
 """Build-specific research queries and explicit runtime navigation.
+Run these examples from the Rumble Racing folder.
 Queries are read-only except runtime --diff; nav sends input to the verified runner.
 
 Examples: py -3 -B tools/rumble_research.py function 0x1af9e0
@@ -36,7 +37,7 @@ IDENTITIES = {
     "retail-iop": (RETAIL / "MODULES/AUDIO.IRX", "301f101c72c29ebecf368457b39de5a3ac65dbbdf2cff62e7b55470fb7e07f95"),
 }
 CACHE = ROOT / "analysis/research-state.json"
-REPORT = ROOT / "PS2Recomp/out/build/ps2xRuntime/inspector.json"
+REPORT = ROOT.parent / "PS2Recomp/out/build/ps2xRuntime/inspector.json"
 
 
 def read_inspector_report():
@@ -276,7 +277,7 @@ def process_state(pid):
         buffer, size = ctypes.create_unicode_buffer(32768), ctypes.c_uint32(32768)
         if not api.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
             return "unknown"
-        runtime = ROOT / "PS2Recomp/out/build/ps2xRuntime"
+        runtime = ROOT.parent / "PS2Recomp/out/build/ps2xRuntime"
         expected = {(runtime / config / "ps2EntryRunner.exe").resolve()
                     for config in ("Debug", "RelWithDebInfo")}
         return "runner alive" if Path(buffer.value).resolve() in expected else "PID belongs to another executable"
@@ -599,7 +600,7 @@ def movie_query(args):
               "audio_sample_rate": 22050, "channels": 2, "channel_bytes_per_chunk": 0x2FC0,
               "sample_frames_per_chunk": 0x2FC0 // 16 * 28,
               "scope": "Offline analysis only; no audio device, runtime command, or buffer-release event is driven."}
-    tools = ROOT / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
+    tools = ROOT.parent / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
     def run_decoder(program, arguments, payload):
         executable = tools / (program + (".exe" if os.name == "nt" else ""))
         if not executable.is_file():
@@ -656,7 +657,7 @@ def music_query(args):
         total, sequence, channel_bytes = struct.unpack_from("<HHH", data, 20)
         if total != len(records) or sequence != index or channel_bytes != 0x2fc0:
             raise ValueError("Music sequence/count/channel layout differs")
-    ffmpeg = ROOT / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
+    ffmpeg = ROOT.parent / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
     ffmpeg /= "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
     channels = []
     for channel in range(2):
@@ -974,7 +975,7 @@ def banks_query(args):
                  "sample_flags": sorted({flag for s in layout["samples"] for flag in s["flags"]}),
                  "first_pass_frames": sum(s["frames"] for s in layout["samples"])}
         if args.verify_decode:
-            tool = ROOT / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
+            tool = ROOT.parent / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
             tool /= "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
             for sample in layout["samples"]:
                 data = body[sample["offset"]:sample["offset"] + sample["bytes"]]
@@ -1011,7 +1012,7 @@ def picture_query(args):
         raise ValueError("Unsupported IPUM size, dimensions, or frame count")
     if width % 16 or height % 16 or data[-8:] != bytes.fromhex("000001b0000001b1"):
         raise ValueError("Expected whole macroblocks and verified frame/sequence end markers")
-    tools = ROOT / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
+    tools = ROOT.parent / "PS2Recomp/out/build/ThirdParty/ffmpeg-prefix/src/ffmpeg_external/bin"
     executable = tools / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
     # FFmpeg's IPU parser splits at frame end B0. A standalone final B1 becomes
     # a second, four-byte packet and the decoder rejects it as a frame. Exclude

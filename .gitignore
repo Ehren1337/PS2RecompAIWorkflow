@@ -62,3 +62,19 @@ SLES_*
 
 # Optional local hardware reference clones
 /reference/
+
+# Rumble workspace: only reviewed helper source and README belong in Git.
+/Rumble Racing/Extracted_Assets/
+/Rumble Racing/Extras/
+/Rumble Racing/CSV Map/
+/Rumble Racing/Ghidra Project/
+/Rumble Racing/analysis/
+/Rumble Racing/output-ghidra/
+/Rumble Racing/private/
+/Rumble Racing/mc0/
+/Rumble Racing/mc1/
+/Rumble Racing/config-ghidra.toml
+/Rumble Racing/Scripts/rumble-benchmark-spot.json
+/Rumble Racing/PS2RECOMP-LOCAL-GUIDE.md
+/Rumble Racing/RUMBLE-RACING-SIMULATION-HANDOFF.md
+/Rumble Racing/SETUP.md

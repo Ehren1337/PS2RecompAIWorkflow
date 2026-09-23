@@ -116,7 +116,7 @@ except BaseException:
 def analyze_waits(executor_tid, start_us, end_us):
     import csv, collections
     x=r'C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\xperf.exe'
-    e=os.environ.copy();e['_NT_SYMBOL_PATH']=str(ROOT/'PS2Recomp/out/build/ps2xRuntime/RelWithDebInfo');e['_NT_SYMCACHE_PATH']=str(Path(os.environ['TEMP'])/'rumble-etw-symbols')
+    e=os.environ.copy();e['_NT_SYMBOL_PATH']=str(ROOT.parent / 'PS2Recomp/out/build/ps2xRuntime/RelWithDebInfo');e['_NT_SYMCACHE_PATH']=str(Path(os.environ['TEMP'])/'rumble-etw-symbols')
     p=subprocess.Popen([x,'-i',str(TRACE),'-symbols','-a','dumper','-range',str(start_us),str(end_us),'-stacktimeshifting','-provider','{3d6fa8d1-fe05-11d0-9dda-00c04fd7ba7c}'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,errors='replace',env=e)
     pending=None;completed_wait=None;stack_target=None;by=collections.defaultdict(collections.Counter)
     examples={};longest=[]

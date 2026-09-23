@@ -1,6 +1,6 @@
 """Local Rumble Racing development controls; no game code or assets included.
 
-From the project root:
+From the Rumble Racing folder (these examples use game-relative paths):
     py -3 -B Scripts/rumble_dev.py launch --max-upgrades --ai
     py -3 -B Scripts/rumble_dev.py launch --no-max-upgrades --no-ai
     py -3 -B Scripts/rumble_dev.py launch --720p --no-frame-capture
