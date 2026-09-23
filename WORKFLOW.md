@@ -20,7 +20,37 @@ Configure `PS2X_ENABLE_DILIGENT_GS=ON` for the experimental GPU path. CMake fetc
 
 `PS2X_ENABLE_FFMPEG=ON` builds movie support. Windows uses the configured shared FFmpeg SDK download; `-DPS2X_FFMPEG_ROOT=<SDK_DIRECTORY>` reuses an SDK with `include/` and `bin/`, import libraries and runtime DLLs. Other hosts need pkg-config development packages `libavcodec`, `libavformat`, `libavutil`, `libswresample`, `libswscale`. `ffmpeg.exe` alone does not satisfy library dependencies. Some Python offline decode comparisons separately need FFmpeg command-line tools. Movie decoding is not the PS2 audio-driver adapter.
 
+The build example is our tested configuration, not a requirement to choose those libraries for every port:
+
+| Component | Required when | Alternative / limit |
+| --- | --- | --- |
+| C++ toolchain, CMake, Git | Building/applying this source patch | Use a supported host toolchain; changing a toolchain still needs validation. |
+| Python | Using the installer and research helpers | Not embedded in the native game; developers can use other orchestration tools. |
+| Ghidra and supported JDK | Using the supplied analysis/export scripts | Another analyzer can be used if it produces equivalent, verified metadata. |
+| FFmpeg development libraries | Enabling the current FFmpeg movie implementation | Set `PS2X_ENABLE_FFMPEG=OFF` to omit it. Current disabled mode supplies placeholder movie frames, not a replacement decoder. |
+| DiligentCore | Enabling the optional custom GPU GS backend | `PS2X_ENABLE_DILIGENT_GS=OFF` keeps the CPU path; another GPU abstraction needs an implementation. |
+| Windows Performance Toolkit/PDBs | Using the optional ETW/PDB profilers | Not needed by players or ordinary analysis; use another platform's profiler where appropriate. |
+| Hardware manuals and ps2tek | Optional research | Not build dependencies, not automatically downloaded or bundled. |
+
+Developers may implement different video decoders or host audio backends. Preserve the game's buffer ownership, callbacks, stream completion, timing and decoded formats when integrating them. FFmpeg handles supported movie decoding; shared PCM/ADPCM/reverb/output and the game-specific IOP sound protocol are separate layers. Installing a codec or host sound library does not implement a game's AUDIO.IRX commands. There is no universal decoder/audio plugin selector in this snapshot.
+
 CMake also resolves the configured raylib/ImGui dependencies. See patched runtime CMakeLists.txt for platform conditions. Retain third-party licenses when distributing binaries. This repository contains no SDK DLLs or game executables.
+
+## Optional PS2 hardware references
+
+These are reading material for developers and AI-assisted analysis, not installation requirements:
+
+- [PS2 programming/manual collection](https://github.com/DarrenRainey/PS2-Programming-Docs): includes EE, GS and VU user manuals. Check the specific manual/revision and its distribution terms.
+- [ps2tek](https://github.com/PSI-Rockin/ps2tek): a community-maintained hardware reference; cross-check relevant sections against manuals and observed behavior.
+
+Optionally keep local copies in the ignored `reference/` folder:
+
+```sh
+git clone https://github.com/DarrenRainey/PS2-Programming-Docs.git reference/ps2-hardware-docs
+git clone https://github.com/PSI-Rockin/ps2tek.git reference/ps2tek
+```
+
+If already present, inspect the existing copy rather than cloning duplicates. These commands download references only when you choose to run them; applying the workflow patch does not run them. Record the reference commit, document section/page and exact operation behind a hypothesis. Revisit that section while implementing and testing EE/VU flags, DMA/GIF ordering, GS formats/depth/blending or IOP services. A plausible theory is not enough: compare predicted behavior with packets/registers/timing and a focused test. If sources disagree or omit an edge case, record the uncertainty instead of treating either source as infallible.
 
 ## Analyze and generate your own game
 
@@ -43,6 +73,46 @@ cmake --build PS2Recomp/out/build --config RelWithDebInfo --target ps2EntryRunne
 ```
 
 The exported TOML's output must be `output-ghidra/` for these commands. Single-configuration generators may omit the configuration executable subdirectory. For repeated generation, track which files your generator owns, preserve handwritten edits and remove only verified obsolete generated files. Our Rumble rebuild script implements that policy for its two known builds; adapt it before using another game.
+
+## Give an AI access to runtime evidence
+
+There is no built-in AI service, API key setup, or automatic model-to-debugger connection. An AI assistant is optional. If you use one, give it access to the project source, your chosen command runner and the inspector output directory through your development environment. A chat without local file/tool access needs you to provide relevant reports. The native debugger window and browser viewer do not automatically send their contents to an AI.
+
+The practical connection is **runner -> inspector file -> tool/assistant**. The custom inspector exposes runtime observations in structured JSON; the assistant reads those observations rather than clicking every debugger tab. Start with read-only access and explicit, scoped development commands for actions. The JSON inspector itself is not an arbitrary function-call or memory-write API.
+
+1. Build the patched runtime with your own generated game code and launch the matching ELF. Follow the inspector setup below; set `PS2_INSPECTOR_FILE` to the report path. Set `PS2_INSPECTOR_FRAME=0` if no images are needed.
+2. Tell the assistant the exact project root, report path, expected ELF hash and current test. Let it read source and reports, and run the inspection helper:
+
+   ```powershell
+   .\tools\Inspect-Runtime.ps1 -Path '<RUNTIME_DIRECTORY>/inspector.json' -Json
+   ```
+
+3. Verify the PID/executable, `runtime_state`, snapshot timestamp/sequence and advancing counters before using a sample as current evidence. The helper knows our schema and Rumble symbol conventions; another game's symbol/address resolution needs adaptation. A stale file or absent optional field is not proof of a crash.
+4. Inspect the first unmet condition: PC/return address, thread/wait state, pending transfer/reply, graphics/audio counters and recent logs. Not every on-screen debugger value is necessarily exported. Add a bounded, read-only watch or instrumentation field when evidence is missing; do not guess it from a screenshot.
+5. Use one image for a visual issue and a contact sheet for flicker. Otherwise prefer small numeric summaries and relevant log tails. Capture/viewer refreshes are local work; model input is consumed when an assistant is actually given text/images, not on every renderer frame.
+
+The viewer only displays captured frames. It is not the debugger connection, a controller API or an AI agent. Runtime changes still need their appropriate build/restart and live verification; reading JSON does not hot-reload C++.
+
+**Starter prompt:**
+
+> Read README.md and WORKFLOW.md. My workspace is <PROJECT_ROOT>, my game identity is <REGION/REVISION/ELF_HASH>, and my inspector report is <REPORT_PATH>. Verify the process and fresh state first. Use the included Python/inspection tools for one concrete hypothesis; consult the relevant optional hardware reference when needed. Keep reports bounded and reuse outputs. Do not copy Rumble addresses into another game, equate a successful build with a working port, or infer absent debugger data. Explain which runtime observation would prove or disprove the hypothesis, implement the smallest supported correction, and verify the compiled behavior.
+
+## Python tools for faster investigation
+
+The tools below are included as separate source files in this repository; the Markdown explains how to use them. They are our research layer, not an embedded Python runtime or a universal PS2 reverse-engineering package.
+
+| Tool | Start here when | Scope |
+| --- | --- | --- |
+| `tools/rumble_research.py` | Inspect functions, game formats, runtime state, movie/audio/model data | Exact-build research; some commands need private exports or FFmpeg command-line tools. |
+| `tools/rumble_menu_research.py` | Find labels/callers and car/track identities | Read-only metadata investigation; labels alone are not callable actions. |
+| `tools/rumble_vu_research.py` | Test VU arithmetic/packet hypotheses before native code | Python models and comparisons against owned input; not a general VU compiler. |
+| `tools/rumble_profile.py` | Catch slowdown windows and correlate clocks, counters, objects and stacks | Windows/PDB diagnostics; optional stack sampling adds measured overhead. |
+| `tools/rumble_etw.py` | Separate busy CPU work from waits/graphics completion | Optional Windows WPR/xperf collection and reanalysis; see profiling section. |
+| `Scripts/rumble_dev.py` | Launch a chosen car/track, save a benchmark pose or enable dev driving/upgrades | Validated retail-specific commands backed by C++ hooks; another game needs its own adapter. |
+| `tools/rumble_navigate.py` | Observe race/menu state or exercise actual menus and controls | Verified states and bounded input routes; prefer direct launch for repeated scene setup. |
+| `tools/runtime_viewer.py` | Watch existing captured frames through restarts | Generic viewing; no AI connection, input or automatic restart. |
+
+Use `--help` on command-line helpers before choosing actions. Python is useful for quick decoding, comparisons, hypotheses and measuring experiments. Once runtime behavior is understood, implement performance-sensitive logic in C++ and validate that compiled implementation against reference data/tests and the live game. Python success alone does not establish C++ thread safety, buffer lifetime, guest timing or GPU correctness. Keep useful analysis in Python; do not rewrite it into C++ without a reason. Prefer one hypothesis and discriminating check over unbounded trial-and-error.
 
 ## Inspector, frames and viewer
 
@@ -287,7 +357,7 @@ A direct-to-gameplay developer mode requires understanding the real initializati
 
 A native C++ executable still needs implementations of graphics, audio, input, timing, IOP services and other PS2 behavior. Recompilation and a set of scripts do not supply complete compatibility.
 
-**Inspect the backend actually in use.** In the current reference workspace, GS primitives are rasterized on the CPU; OpenGL uploads/displays the completed image. An OpenGL window therefore does not establish hardware-accelerated game rasterization. Another checkout may use a different backend.
+**Inspect the backend actually in use.** Current reference gameplay uses the optional Diligent D3D11 GS backend; CPU reference/fallback paths remain. The native window still uses raylib/OpenGL presentation, so the window API alone does not identify the GS rasterizer. Check the inspector backend and actual work/transfer counters; another checkout may use a different configuration.
 
 Separate:
 

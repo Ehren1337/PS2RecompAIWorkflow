@@ -27,11 +27,13 @@ cmake -S PS2Recomp -B PS2Recomp/out/build -DPS2X_ENABLE_RUNTIME_LOGS=ON -DPS2X_E
 cmake --build PS2Recomp/out/build --config RelWithDebInfo --target ps2_recomp ps2x_tests
 ```
 
+The example enables our current GPU and movie implementations. They are choices: use `-DPS2X_ENABLE_DILIGENT_GS=OFF` for the CPU backend or `-DPS2X_ENABLE_FFMPEG=OFF` to build without FFmpeg (movie decoding then uses placeholder frames until a replacement is implemented). Alternative video/audio backends require integration, not just installing another library.
+
 On Windows, use `py -3` if `python` is unavailable. The installer checks the pinned revision and refuses conflicting edits. It does not download games, generate game code, build, or launch anything. Newer upstream revisions require reviewing/rebasing the patch.
 
 For a single-configuration generator, also configure `-DCMAKE_BUILD_TYPE=RelWithDebInfo`. Updating an older patched checkout requires reviewing its local changes; `apply.py` does not upgrade a previous patch in place. Use a clean pinned checkout for this snapshot and keep private/generated inputs separate.
 
-Next: follow [the game-analysis workflow](WORKFLOW.md#analyze-and-generate-your-own-game). Setup alone does not produce a playable runner.
+Next: follow [game analysis](WORKFLOW.md#analyze-and-generate-your-own-game), [AI access to runtime evidence](WORKFLOW.md#give-an-ai-access-to-runtime-evidence), and [the Python tool guide](WORKFLOW.md#python-tools-for-faster-investigation). Optional [PS2 hardware references](WORKFLOW.md#optional-ps2-hardware-references) help explain behavior. Setup alone does not produce a playable runner.
 
 Once a matching runner is built and inspector capture is enabled:
 

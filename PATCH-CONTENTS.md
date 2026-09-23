@@ -10,8 +10,6 @@ Snapshot: September 23, 2026. Upstream: `14b1e5cb39b4af7e6fc12f9a29fdc751efde49d
 - Keyboard mappings, host output size/aspect/filter controls, frame latching and presentation work. The optional Diligent GPU backend shares GS operations across APIs, with ordered CPU coherence/fallback paths and raylib window presentation. Changing window size does not raise internal resolution.
 - Scheduler/callback ownership, COP0 Count and blocked-state observations; SIF/RPC, CD/MPEG, pad/TTY and memory integration.
 - Native PCM/ADPCM voice, looping/phase and reverb facilities, plus focused native regression tests.
-- Pinned DiligentCore integration, GPU GS shaders, ordered worker/submission batches, bounded VRAM ownership, asynchronous display readback and opt-in early depth readback.
-- Exact register-key comparisons and DMA/VIF/guest-address corrections. Isolated benchmark gains are not whole-game speedup claims.
 - Pinned DiligentCore CMake integration, GPU GS shaders, ordered worker/submission batches, bounded VRAM ownership, asynchronous display readback and opt-in early depth readback.
 - Exact register-key comparisons and DMA/VIF/guest-address corrections. Retained optimizations preserve observed ordering and data; isolated benchmark gains are not whole-game speedup claims.
 - FPU translation and Ghidra exporter fixes. Windows RelWithDebInfo runtime inlining is enabled without fast-math or a new build tree.
@@ -23,9 +21,7 @@ These are development changes, not completed PS2 subsystem implementations or au
 - `rumble_audio.cpp` and related reverb state implement handwritten, build-scoped AUDIO.IRX service behavior; unsupported cases remain explicit.
 - `rumble_picture.cpp` orchestrates picture decode/upload using the user's generated guest functions.
 - `rumble_video.cpp` integrates Video Options through retail menu/font/input routines and applies retail presentation policy. Host sizing/filter settings currently reset on launch.
-- `rumble_dev.cpp` provides opt-in original No Mercy NPC player driving and Single Race upgrade overrides, retaining manual play. It also provides direct car/track race preparation and a once-per-countdown saved-pose recovery. It also provides direct car/track race preparation and once-per-countdown saved-pose recovery. Intentional glitch presentation is separately opt-in.
-- `rumble_vu_native.cpp` provides handwritten exact-build geometry specializations with bounded interpreter comparisons and explicit guards, not a universal VU replacement.
-- Windows/PDB numeric profiling and WPR/xperf CPU/wait/GPU analysis helpers reuse private outputs.
+- `rumble_dev.cpp` provides opt-in original No Mercy NPC player driving and Single Race upgrade overrides, retaining manual play. It also provides direct car/track race preparation and a once-per-countdown saved-pose recovery. Intentional glitch presentation is separately opt-in.
 - `rumble_vu_native.cpp` implements handwritten exact-build geometry specializations with bounded interpreter comparisons and explicit guards; it is not a universal VU replacement.
 - Windows/PDB numeric profiling and WPR/xperf CPU/wait/GPU analysis helpers retain bounded counters and reuse private output paths.
 - Hash-guarded Ghidra function repair/import scripts, Python model/audio/menu/camera research, state-checked input routes and developer controls in `Scripts/rumble_dev.py`.
