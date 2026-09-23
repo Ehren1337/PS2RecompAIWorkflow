@@ -52,6 +52,45 @@ git clone https://github.com/PSI-Rockin/ps2tek.git reference/ps2tek
 
 If already present, inspect the existing copy rather than cloning duplicates. These commands download references only when you choose to run them; applying the workflow patch does not run them. Record the reference commit, document section/page and exact operation behind a hypothesis. Revisit that section while implementing and testing EE/VU flags, DMA/GIF ordering, GS formats/depth/blending or IOP services. A plausible theory is not enough: compare predicted behavior with packets/registers/timing and a focused test. If sources disagree or omit an edge case, record the uncertainty instead of treating either source as infallible.
 
+## Start another PS2 game
+
+Think of this repository as the starting toolbox. Each new game still needs its own analysis, generated code and compatibility work. Keep your working game project intact and give the next game a separate folder.
+
+1. **Make a separate workspace.** From the parent directory where you keep projects, clone with a new folder name:
+
+   ```sh
+   git clone https://github.com/Ehren1337/PS2RecompAIWorkflow.git MyNextPS2Game
+   cd MyNextPS2Game
+   ```
+
+   Continue the [README setup](README.md#setup) from the inner `git clone ... PS2Recomp` step; do not clone this workflow repository again. Keep the nested source directory named `PS2Recomp` so the generic examples resolve correctly.
+2. **Identify your game.** Supply your own disc dump and extract its boot executable and assets into an ignored folder such as `private/YOUR_GAME/`. Record title, region, revision and executable/module hashes. Do not rename another game's executable to match Rumble or disable identity guards.
+3. **Analyze and generate.** Follow [Analyze and generate your own game](#analyze-and-generate-your-own-game): Ghidra analysis, function-map/TOML export, C++ generation and the first runner build. The placeholder TOML is an example, not a finished game configuration. Keep generated game code private.
+4. **Connect runtime evidence.** Follow [AI access to runtime evidence](#give-an-ai-access-to-runtime-evidence) and the generic [inspector launch example](#inspector-frames-and-viewer), using your executable/report paths. For a new game, do not launch through `run-ntsc.ps1` or `Scripts/rumble_dev.py`; those select known Rumble builds. A visible window or successful compilation alone is not proof of working gameplay.
+5. **Investigate one blocker at a time.** Start with startup/module loading, then the first screen, input, asset reads, graphics/audio, gameplay and transitions. Verify the first unmet condition using fresh runtime data and source analysis. Use [Python tools and experiments](#python-tools-for-faster-investigation) where useful; create a separately named helper for the new game and adapt assumptions deliberately.
+6. **Validate and record progress.** Test fixes in compiled C++ and the live game. Keep ordinary behavior and development shortcuts separate. Record what works, what is unverified, the next blocker and how to reproduce it. Reuse one build tree and bounded reports; do not accumulate backups or image dumps.
+
+### What transfers to another game?
+
+| Reuse or adapt | What still needs investigation |
+| --- | --- |
+| Patched PS2 runtime, scheduler, memory and graphics/audio facilities | Whether they cover the new game's instructions, hardware behavior, modules and timing; these implementations remain incomplete. |
+| Inspector JSON, viewer, capture/contact sheets and inspection workflow | New symbol maps, addresses, game state and useful watches. |
+| Python research/profiling techniques and reusable helper code | Rumble helpers often assume its assets, exact hashes, PDB symbols and data structures. They are examples to adapt, not universal commands. |
+| Shared movie/audio building blocks | The new game's movie formats and IOP sound-driver protocol; another library alone does not implement those services. |
+| Ghidra exporter and analysis workflow | Correct function boundaries, indirect targets, configuration and generated code for the actual executable. |
+| Example direct-launch/teleport/AI-driving design | New game's verified initialization and function interfaces. Rumble car IDs, addresses, native VU routines and menu hooks must not be copied as working settings. |
+
+The patch is integrated; it includes game-guarded Rumble code alongside general improvements. Leave those guards intact. Another game's required fixes may be substantial, and shared fixes need regression checks against existing behavior. Optional libraries and [hardware references](#optional-ps2-hardware-references) remain choices explained above.
+
+### Copyable prompt for your AI assistant
+
+Replace the placeholders, then give this to an assistant with access to the new workspace and your permitted tools:
+
+> Set up this toolkit for <GAME_TITLE / REGION / REVISION> in <NEW_PROJECT_ROOT>, separate from my existing game project. Read README.md and WORKFLOW.md first. Locate my supplied files at <LOCAL_GAME_DIRECTORY> and verify the executable/module hashes. Apply the pinned source patch, analyze the actual executable, export configuration and function metadata, and generate/build its own runner. Connect fresh inspector observations to your investigation; do not assume the debugger window automatically sends data to you. Reuse general runtime improvements and Python research techniques, but create a separately named game helper and do not reuse Rumble addresses, launchers, audio protocols or native VU assumptions. Use small Python experiments and the relevant optional hardware documents to test specific hypotheses, then validate necessary C++ changes with focused checks and live behavior. Start with verified startup and work toward gameplay, reporting the first blocker and evidence needed to resolve it. Keep game data/generated code private, reuse outputs, cap history and create no backups. Do not promise automatic compatibility or declare a port finished because it builds.
+
+First useful milestone: a matching executable launches, the inspector identifies the current process, and you have either a verified first screen or a precisely identified startup blocker. That is a useful starting point even when the game is not playable yet.
+
 ## Analyze and generate your own game
 
 1. Complete README setup. Keep one `PS2Recomp/out/build` directory and reuse it.

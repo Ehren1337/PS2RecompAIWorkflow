@@ -11,6 +11,12 @@ Source patches and development tools from an ongoing Rumble Racing reversing pro
 - **Rumble-specific work:** build-guarded symbol/function repairs, state-checked menu automation, direct car/track launch, saved benchmark poses, optional developer driving/upgrades, validated native VU paths, native Video Options, asset-format readers, and handwritten picture/audio compatibility code. These are not settings for other games.
 - **Boilerplates:** [workflow, commands and AI prompts](WORKFLOW.md), plus a [placeholder configuration](examples/config.template.toml).
 
+## Start another PS2 game
+
+Use a **separate project folder** and follow [the new-game walkthrough and copyable AI prompt](WORKFLOW.md#start-another-ps2-game). Apply this toolkit, analyze your own game in Ghidra, generate its C++, then use the inspector and Python experiments to investigate startup and gameplay.
+
+The general runtime and diagnostics are reusable. Rumble's addresses, launch shortcuts, native geometry and sound-driver adapter are game-specific. Applying the patch does not automatically make another game playable.
+
 ## Setup
 
 Install Git, Python 3.10+, CMake 3.21+, and a C++20 toolchain. On Windows use Visual Studio's **Desktop development with C++** tools. Ghidra and its supported JDK are needed for game analysis; they are not bundled.
